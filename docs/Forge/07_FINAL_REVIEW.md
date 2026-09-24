@@ -113,7 +113,12 @@ FINAL_REVIEW_2
 ## 7. Metadata
 
 ```yaml
-state: FINAL_REVIEW
+# runtime state（state.json 的 state；canonical，見 00_WORKFLOW_STATE.md）
+# Gate #1 runtime state = FINAL_REVIEW_1
+# Gate #2 runtime state = FINAL_REVIEW_2
+state: FINAL_REVIEW_1     # Gate #1 進行中
+# state: FINAL_REVIEW_2   # Gate #2 進行中
+
 final_review_1:
   verdict: PASS | FAIL | BLOCKED
   report: final_reviews/gate1/<run>.md
@@ -126,11 +131,15 @@ final_review_2:
 ## 8. Transition
 
 ```text
-FINAL_REVIEW
-   ├─ Gate1 PASS + Gate2 PASS → FINAL_VERIFICATION
-   ├─ Gate1 FAIL              → REWORK
-   ├─ Gate2 FAIL              → REWORK
-   └─ BLOCKED                 → BLOCKED
+FINAL_REVIEW_1（Gate #1 runtime state）
+    ├─ Gate1 PASS → FINAL_REVIEW_2
+    ├─ Gate1 FAIL → REWORK
+    └─ BLOCKED    → BLOCKED
+
+FINAL_REVIEW_2（Gate #2 runtime state）
+    ├─ Gate2 PASS → FINAL_VERIFICATION
+    ├─ Gate2 FAIL → REWORK
+    └─ BLOCKED    → BLOCKED
 ```
 
 ## 9. Exit Criteria

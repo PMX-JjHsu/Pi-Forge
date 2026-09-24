@@ -113,7 +113,7 @@ open http://127.0.0.1:8790           # 2. 瀏覽器開 GUI
 ### 3.2 Backend（`gui/app.py` + `gui/orchestrator.py`）
 - **薄層 API**：每個 route 只做參數檢查 + `subprocess.run(["zsh", ORCH, <subcmd>, ...])`，回傳結構化結果。**不自建任何 guard**。
 - **orchestrator.py**：local-LLM brain（見 §4 決策）。
-- **pollers（零成本，硬性）**：狀態一律**純機械取得，絕不呼叫任何 LLM**——`run.meta` 純文字讀、`sessions/<role>-<task>/*.jsonl` 的 **mtime**（停滯，沿用 `ORCH_STALL_MIN`）、jsonl **tail 最後一行 raw action**（「在做什麼」，不叫 model 摘要）、`git log main..<branch>`（merge/ahead）、pi process 精確比對（角色數）。這是 §3.6.12。
+- **pollers（零成本，硬性）**：狀態一律**純機械取得，絕不呼叫任何 LLM**——`run.meta` 純文字讀、`sessions/<role>-<task>/*.jsonl` 的 **mtime**（停滯，沿用 `ORCH_STALL_MIN`）、jsonl **tail 最後一行 raw action**（「在做什麼」，不叫 model 摘要）、`git log main..<branch>`（merge/ahead）、pi process 精確比對（角色數）。這是 §3.6.12。（注意：這些機械讀取的是 **Evidence / Runtime Detail**；current workflow state 的權威來源是 lane runtime metadata 的 `state`，見 `shells/orch/specs/00_WORKFLOW_STATE.md`，不得由上述 evidence 推導。）
 - **模型目錄來源**：`GET /api/models` 直接跑 `pi --list-models`（＋ `pi auth check --provider <p>`）解析成「廠商 → 模型」樹，附各家 readiness；不寫死清單，pi 更新型錄就自動反映。
 
 ### 3.4 模型選擇 UI（廠商 → 模型 → Effort 強度）
@@ -187,27 +187,32 @@ open http://127.0.0.1:8790           # 2. 瀏覽器開 GUI
 預設目錄與檔案結構：
 
 ```
-RobotProject/                       ← lane 的 workdir（找/存檔案都限這裡）
+RobotProject/                       ← Project 的 repo_root / workdir（找/存檔案都限這裡）
 ├── src/                            ← 專案原始碼
 ├── docs/                           ← 專案文件
 ├── ...                             ← 其他專案內容
 └── .piforge/                       ← 編排（orch）metadata（hidden，不混進產品原始碼）
-    ├── project.yaml                ← 專案級設定（project 名、共用 guard 預設…）
+    ├── project.yaml                ← Project Settings（repo_root / default_branch / validation / defaults）
     └── lanes/
-        ├── lane-001/
-        │   └── lane.yaml           ← 該 lane 的設定
-        ├── lane-002/
-        │   └── lane.yaml
-        └── lane-003/
-            └── lane.yaml
+        └── lane-001/
+            ├── lane.yaml           ← Lane Settings（config：items / scope / composition / overrides）
+            ├── state.json          ← Runtime State（state / branch / base_sha / session refs；orchestrator 寫）
+            └── events.jsonl        ← 事件歷史（append-only）
 ```
 
-- **lane 設定從 flat `lane.conf` 遷到 `.piforge/lanes/<lane>/lane.yaml`**：`orch new` 建 lane 時，在該專案 workdir 下寫 `project.yaml`（首次建專案）＋ `lanes/lane-XXX/lane.yaml`（每 lane 一份）。`lane.yaml` 承載舊 `lane.conf` 的欄位（RUN_NAME / BRANCH / BASE_SHA / ITEMS / FILES ＋ §4.3 的 workers / reviewers / final_reviewer / rework / stop_at）。
+- **設定分層（System / Project / Lane / Runtime / Specs）見 `shells/orch/specs/00_CONFIGURATION_MODEL.md`**：`repo_root` / workdir 是 **Project 屬性**（`project.yaml`），**lane 不存 workdir**；lane 透過 parent Project 取得 repo root。
+- **lane 設定從 flat `lane.conf` 遷到 `.piforge/lanes/<lane>/lane.yaml`**：`orch new` 建 lane 時，在該專案 workdir 下寫 `project.yaml`（首次建專案）＋ `lanes/lane-XXX/lane.yaml`（每 lane 一份）。`lane.yaml` 承載 config 欄位（ITEMS / FILES / scope ＋ §4.3 的 workers / reviewers / final_reviewer / rework / stop_at；null＝inherit）。BRANCH / BASE_SHA 等執行期欄位存 `state.json`（runtime），不進 `lane.yaml`。
 - **`.piforge/` 與執行期暫存分開**：`project.yaml` / `lane.yaml` 是**可版控的設定**，放專案 workdir 內；`run.meta` / `sessions/` / `logs/` / `heartbeat.log` 是**每次 run 的執行期產物**，維持在 `tmp/<run>/`（§8）。兩者不混。
-- **GUI**：左欄樹的每個專案對應一個 `RobotProject/` workdir；new-lane 表單的「工作目錄」預填此結構並顯示上述樹狀示意；lane 詳細頁的 workdir 顯示該專案根、tooltip 標明 lane 設定在 `.piforge/lanes/<lane>/lane.yaml`。
+- **GUI**：左欄樹的每個專案對應一個 `RobotProject/` repo_root（⚙ Project Settings 可改）；**New Lane 表單不再問 workdir**（repo root 取自 Project；從專案列「＋」進來時 Project 為 read-only context）；lane 詳細頁的 repo root 顯示該 Project 的繼承值、標明「要改請用 ⚙ Project Settings」；lane 設定在 `.piforge/lanes/<lane>/lane.yaml`（config）＋ `state.json`（runtime）＋ `events.jsonl`（history）。
 - **機器層遷移（後續）**：本節是目標預設結構；`new.sh`／`lib.sh` 目前仍寫 flat `tmp/<run>/lane.conf`，遷移到 `.piforge/lanes/<lane>/lane.yaml` 屬 Phase 1 的機器層改動（§1 原則 2：參數化、集中單一真相來源）。
 
 ### 3.9 lane 執行階段流（七階段 + rework 回環）
+
+> ⚠️ **LEGACY / PENDING MIGRATION**
+>
+> 此圖的 phase ordering 尚未依新版 workflow 更新。
+> Current workflow state 的權威定義請以 `shells/orch/specs/00_WORKFLOW_STATE.md` 為準。
+> **不要從此舊圖推導 runtime state。**
 
 一條 lane 的執行流是下面的狀態機：happy-path 直線、三處 FAIL 各有一條 REWORK 回環。GUI 中欄 pipeline / 分頁即依此呈現（§3.1）。
 
@@ -258,7 +263,7 @@ DONE
 - **REWORK 回環**：Local Review / Final Review 的 FAIL 都回到 **IMPLEMENT** 重做（`ORCH_MAX_REWORK` 上限，達頂沿 provider chain 換一家重打，§4.2/§4.3）；Integrate 的 FAIL 走 **REWORK / FIX_INTEGRATION**（修整合衝突、可只動整合不改實作）後重跑 INTEGRATE。
 - **pipeline 是 happy-path 直線**（§3.1 中欄）：REWORK **不新增直線節點**，以 rework 計數（`rework n/max`）與 worker 狀態「↻ rework 中」呈現回環（§3.6.9）。
 - **階段 ↔ per-stage log**（§3.7）：每階段一份 `logs/<lane>/<stage>.log`，`stage ∈ dispatch / implement / local_review / final_review / integrate / merge_main / done`。
-- **機器層**：本節是流程定義；實際狀態由 `run.meta`（start/end/rework/PROVIDER_FALLBACK）＋ gate 結論（`gate1/`、`gate2/`）＋ `git log main..<branch>` 機械推出（§3.6.12），GUI 只呈現、不自建判斷。
+- **機器層（state 權威來源）**：本節是流程定義。Lane current workflow state 的唯一權威來源是 Lane runtime metadata 的 `state`（存於 `state.json`；canonical 定義見 `shells/orch/specs/00_WORKFLOW_STATE.md`）。`run.meta` / events、gate result（`gate1/`、`gate2/`）、`git log main..<branch>`、in-flight agent、session activity 只能作為 **Evidence / Runtime Detail**，**不得用來推導或重建 current workflow state**。Backend `/api/status` 必須直接回傳 authoritative `state`；GUI 只 render，不推理。crash recovery / state reconstruction 屬 **future recovery mechanism**，目前不定義。
 
 ---
 
@@ -432,7 +437,7 @@ lane 不再固定「2 worker + 1 reviewer」，改成**每條 lane 開工時可�
 
 | Method | Path | 對應 |
 |--------|------|------|
-| GET | `/api/status` | 包 `orch status` → lanes/occupancy/tokens/stall |
+| GET | `/api/status` | 包 `orch status` → lanes/occupancy/tokens/stall；每 lane 必含 `state`（canonical workflow state，SSoT；PAUSED/BLOCKED/FAILED 附 `resume_state`），見 `shells/orch/specs/00_WORKFLOW_STATE.md` |
 | GET | `/api/models` | 跑 `pi --list-models` ＋ `pi auth check` → 廠商→模型樹（readiness、premium 標記），餵 §3.4 選擇器 |
 | GET | `/api/lanes/:name/meta` | `run.meta` tail |
 | GET | `/api/lanes/:name/logs?role=&task=` | `logs/` 或 `sessions/` tail |

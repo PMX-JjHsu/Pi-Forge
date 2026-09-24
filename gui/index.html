@@ -380,8 +380,12 @@
 
     <!-- Log / 事件流 已改為每 lane 的分頁（見「Lanes」頁 → 該 lane 的「Log / 事件流」分頁）-->
 
-    <!-- 頁籤四：設定（分頁籤：連線 Setup / 模型設定 / Monitor / 角色全景）-->
+    <!-- 頁籤四：System Settings（分頁籤：連線 Setup / 模型設定 / Monitor / 角色全景）-->
     <div class="tab-panel" id="tab-cfg">
+      <div class="muted" style="font-size:10px;padding:2px 2px 0">
+        <b>System Settings</b>（Pi Forge 全域，<code>~/.piforge/config.yaml</code>）：providers / 全域 model chain / Pi cap / 排程預設。
+        Project 層＝左欄專案 ⚙（<code>.piforge/project.yaml</code>）；Lane 層＝lane「設定」頁（<code>lanes/&lt;lane&gt;/lane.yaml</code>）。Project / Lane 用 inherit（null）取得這裡的預設，不會複製一份進來。
+      </div>
       <div class="ldtabs" id="cfg-tabs">
         <div class="ldtab sel" data-cfgtab="setup">連線 / Setup</div>
         <div class="ldtab" data-cfgtab="models">模型設定</div>
@@ -412,9 +416,9 @@
         <!-- 模型設定（per-role provider chain）-->
         <div class="cfg-sec" id="cfg-sec-models" style="display:none">
           <div class="card">
-            <h2>模型設定 · per-role provider chain</h2>
+            <h2>模型設定 · per-role provider chain <span class="muted">（System Default）</span></h2>
             <div class="desc muted" style="font-size:11px;margin-bottom:10px">
-              每個角色一組「廠商 → 模型 → Effort」優先序清單。用完額度自動退下一列（fallback），降級會在頂欄亮燈、事件流留痕。cloud 優先走 Copilot（月費固定）。停用的廠商（連線 Setup 頁 off）不會被選用。
+              每個角色一組「廠商 → 模型 → Effort」優先序清單（System 層預設）。Project / Lane 可 override（解析順序：Lane → Project → System）。用完額度自動退下一列（fallback），降級只在 Runtime State / 事件流留痕，不改 config。cloud 優先走 Copilot（月費固定）。停用的廠商（連線 Setup 頁 off）不會被選用。
             </div>
             <div class="tabs" id="role-tabs"></div>
             <div id="chain-editor"></div>
@@ -424,7 +428,7 @@
             </div>
             <div class="indep-warn" id="indep-warn"></div>
             <div class="row" style="justify-content:flex-end;margin-top:14px">
-              <button class="btn primary" id="chain-save">儲存到 orch_models.json</button>
+              <button class="btn primary" id="chain-save">儲存到 System Settings（config.yaml）</button>
             </div>
           </div>
         </div>
@@ -445,6 +449,11 @@
               <span id="quit-hint" class="muted" style="font-size:10px"></span>
             </span>
             <div class="muted" style="font-size:10px;margin-top:8px">到點所有 lane 只停派新工，in-flight 做完（不殺既有 pi）。</div>
+            <div class="tlabel" style="margin-top:12px">System Defaults <span class="muted">（Project / Lane 可 inherit 或 override；靜態預覽只讀）</span></div>
+            <div class="muted" style="font-size:11px">
+              workers <b id="sys-w">—</b> · reviewers <b id="sys-r">—</b> · Final Reviewer <b id="sys-f">—</b> · rework/task <b id="sys-rework">—</b>
+              · Pi cap <b id="sys-pi">—</b> · stall <b id="sys-stall">—</b> min
+            </div>
           </div>
         </div>
 
@@ -463,47 +472,75 @@
   </div>
 </div>
 
-<!-- New Lane modal -->
+<!-- New Lane modal（Project 層提供 repo root；lane 不存 workdir）-->
 <div class="modal-bg" id="nl-modal">
   <div class="modal">
     <div style="display:flex;justify-content:space-between;align-items:start">
       <div>
         <h3>New Lane</h3>
-        <div class="desc">建一條開發 lane：指定專案、backlog items、檔案互斥清單、lane 組成。組成受 ORCH_LANE_CAP=3 / ORCH_PI_CAP=8 夾住。</div>
+        <div class="desc">建一條開發 lane：backlog items、scope 檔案互斥清單、lane 組成。<b>repo root / workdir 屬於 Project Settings</b>（<code>.piforge/project.yaml</code>），不在 lane 設定；組成 inherit 時不複製上層值。</div>
       </div>
       <span class="close" id="nl-close">✕</span>
     </div>
-    <label>Project（專案）</label><input id="n-project" placeholder="gesture">
-    <label>Name</label><input id="n-name" placeholder="gesture">
-    <label>工作目錄 workdir（RobotProject 根目錄；找 / 存檔案都限在這裡，會儲存起來）</label>
-    <span style="display:flex;gap:6px">
-      <input id="n-workdir" placeholder="~/orch/RobotProject">
-      <button class="btn sm" id="n-workdir-pick" type="button">選擇資料夾…</button>
-    </span>
-    <div id="n-workdir-chip" style="margin-top:4px"></div>
-    <div class="muted" style="font-size:10px;margin-top:4px">預設結構（lane 設定在 <code>.piforge/lanes/&lt;lane&gt;/lane.yaml</code>）：</div>
+    <label>Project（從專案列「＋」進來時為 read-only context）</label>
+    <select id="n-project"></select>
+    <label>Lane Name</label><input id="n-name" placeholder="gesture">
+    <div class="muted" style="font-size:10px;margin-top:4px">lane 資料在 <code>.piforge/lanes/&lt;lane&gt;/</code>（config / runtime / history 分離；repo root 繼承自 Project）：</div>
     <pre class="log" style="min-height:0;max-height:150px;font-size:10px;margin:2px 0 0">RobotProject/
-├── src/
-├── docs/
-├── ...
-└── .piforge/
-    ├── project.yaml
-    └── lanes/
-        ├── lane-001/lane.yaml
-        ├── lane-002/lane.yaml
-        └── lane-003/lane.yaml</pre>
+ └── .piforge/
+     ├── project.yaml            ← Project Settings（repo_root / validation / defaults）
+     └── lanes/
+         └── gesture/
+             ├── lane.yaml       ← Lane Settings（config，人可編輯）
+             ├── state.json      ← Runtime State（orchestrator 寫，GUI 只讀）
+             └── events.jsonl    ← 事件歷史（append-only）</pre>
     <label>Items（BL-XXX-000 …）</label><input id="n-items" placeholder="BL-GESTURE-007 BL-GESTURE-008">
-    <label>Files（檔重疊檢查用，相對 workdir；強烈建議帶）</label><input id="n-files" placeholder="collect.py">
-    <label>Lane 組成（受 ORCH_LANE_CAP=3 / ORCH_PI_CAP=8 夾住）</label>
+    <label>Scope / Files（檔重疊檢查用，相對 repo root；強烈建議帶）</label><input id="n-files" placeholder="collect.py">
+    <label>Lane 組成（inherit 時顯示繼承值；按 ± 才寫成 lane override，受 ORCH_LANE_CAP=3 / ORCH_PI_CAP=8 夾住）</label>
     <div class="comprow">
-      <div class="f"><span>Workers</span><div class="stepper" data-step="workers"><button data-d="-1">−</button><span class="val" id="c-workers">2</span><button data-d="1">＋</button></div></div>
-      <div class="f"><span>Reviewers</span><div class="stepper" data-step="reviewers"><button data-d="-1">−</button><span class="val" id="c-reviewers">1</span><button data-d="1">＋</button></div></div>
-      <div class="f"><span>Final Reviewer</span><div class="stepper" data-step="final"><button data-d="-1">−</button><span class="val" id="c-final">1</span><button data-d="1">＋</button></div></div>
-      <div class="f"><span>rework/task（預設全域 5）</span><div class="stepper" data-step="rework"><button data-d="-1">−</button><span class="val" id="c-rework">5</span><button data-d="1">＋</button></div></div>
+      <div class="f"><span>Workers <span class="chip ready" id="ch-workers">inherit</span></span><div class="stepper" data-step="workers"><button data-d="-1">−</button><span class="val" id="c-workers">2</span><button data-d="1">＋</button></div></div>
+      <div class="f"><span>Reviewers <span class="chip ready" id="ch-reviewers">inherit</span></span><div class="stepper" data-step="reviewers"><button data-d="-1">−</button><span class="val" id="c-reviewers">1</span><button data-d="1">＋</button></div></div>
+      <div class="f"><span>Final Reviewer <span class="chip ready" id="ch-final">inherit</span></span><div class="stepper" data-step="final"><button data-d="-1">−</button><span class="val" id="c-final">1</span><button data-d="1">＋</button></div></div>
+      <div class="f"><span>Rework Max <span class="chip ready" id="ch-rework">inherit</span></span><div class="stepper" data-step="rework"><button data-d="-1">−</button><span class="val" id="c-rework">5</span><button data-d="1">＋</button></div></div>
     </div>
     <div class="muted" style="font-size:10px;margin-top:4px">在 live lane 調整這些數量也一樣：<b style="color:var(--fg)">只影響之後dispatch，絕不中斷已派出去的 worker/reviewer/Final Reviewer</b>（降數量＝不再派新的、超出的自然做完）。</div>
+    <div class="muted" style="font-size:10px;margin-top:4px">Model Overrides / Schedule Override 建 lane 後可在 lane「設定」頁調整（不填＝inherit）。</div>
     <div class="redwarn" id="final-warn">⚠ 已關閉獨立 Final Reviewer（=0），合併僅靠人工確認。這是「Review 獨立性」的手動 opt-out，預設不關。</div>
     <div class="row" style="justify-content:flex-end"><button class="btn primary" data-act="new">orch new</button></div>
+  </div>
+</div>
+
+<!-- Project Settings modal（Project 層：.piforge/project.yaml）-->
+<div class="modal-bg" id="ps-modal">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:start">
+      <div>
+        <h3>Project Settings <span class="muted" id="ps-id" style="font-size:11px"></span></h3>
+        <div class="desc">Project 層設定（<code>&lt;ProjectRoot&gt;/.piforge/project.yaml</code>）：這個 repository 怎麼運作。lane 不存 repo root / default branch / validation，全部繼承這裡。數值留空＝inherit System default。</div>
+      </div>
+      <span class="close" id="ps-close">✕</span>
+    </div>
+    <div class="tlabel">General</div>
+    <label>Project Name</label><input id="ps-name">
+    <label>Repository / Workdir（repo_root）</label><input id="ps-repo">
+    <label>Default Branch</label><input id="ps-branch" style="width:auto">
+    <div class="tlabel">Validation</div>
+    <label>Build Command（空＝不跑）</label><input id="ps-build" placeholder="python -m build">
+    <label>Test Command（空＝不跑）</label><input id="ps-tests" placeholder="pytest">
+    <label>Autotest Command（空＝不跑）</label><input id="ps-autotest" placeholder="python tools/autotest.py">
+    <div class="tlabel">Runtime Assets（執行期資產，非原始碼；每行一個）</div>
+    <textarea id="ps-assets" style="min-height:56px" placeholder="models/&#10;data/&#10;.venv/"></textarea>
+    <div class="tlabel">Protection（保護路徑，不讓 lane 改；每行一個）</div>
+    <textarea id="ps-protected" style="min-height:56px" placeholder="docs/&#10;secrets/"></textarea>
+    <div class="tlabel">Defaults（空＝inherit System）</div>
+    <div class="comprow">
+      <div class="f"><span>Max Lanes</span><input id="ps-maxlanes" style="width:90px" placeholder="inherit"></div>
+      <div class="f"><span>Workers / Lane</span><input id="ps-workers" style="width:90px" placeholder="inherit"></div>
+      <div class="f"><span>Reviewers / Lane</span><input id="ps-reviewers" style="width:90px" placeholder="inherit"></div>
+      <div class="f"><span>Rework Max</span><input id="ps-rework" style="width:90px" placeholder="inherit"></div>
+    </div>
+    <div class="muted" style="font-size:10px;margin-top:6px">Model Overrides（Project 層）本輪只有資料模型（<code>model_overrides.*</code>，null＝inherit System），完整 editor 後續再加。</div>
+    <div class="row" style="justify-content:flex-end"><button class="btn primary" id="ps-save">儲存到 project.yaml</button></div>
   </div>
 </div>
 
@@ -584,26 +621,83 @@ const PHASES=[
   {id:"merge_main",   l:"Merge Main"},
   {id:"done",         l:"Done"},
 ];
-// 線性 happy-path 進度；REWORK 回環（Local/Final Review FAIL → REWORK → Implement、Integrate FAIL → REWORK/FIX_INTEGRATION）由 rework 計數與狀態呈現
-function lanePhaseIndex(l){
-  if(l.merge==="merged") return 6;                                // DONE
-  if(l.merge==="merging"||l.merge==="ready") return 5;            // MERGE_MAIN
-  const g=l.gates||{};
-  if(g.final==="PASS") return 4;                                  // INTEGRATE
-  if(g.final==="RUN"||g.final==="INPROG") return 3;               // FINAL_REVIEW
-  if(g.self==="PASS") return 3;                                   // FINAL_REVIEW
-  if(g.task==="PASS") return 2;                                   // LOCAL_REVIEW
-  const wk=l.inflight.find(p=>p.role==="worker"&&p.status!=="queued");
-  if(wk) return 1;                                                // IMPLEMENT
-  return 0;                                                       // DISPATCH
+// ---- Lane workflow state（Single Source of Truth）----
+// current state 的唯一權威來源＝lane.metadata.state（orchestrator 更新）；GUI 只 render。
+// 不得由 merge / gates / inflight / worker status / review verdict / Pi session 推測 current state；
+// 那些只是 evidence（顯示於各 phase 頁 / Log / Merge badge）。
+// 完整定義：shells/orch/specs/00_WORKFLOW_STATE.md
+const LANE_STATES=["DISPATCH","IMPLEMENT","LOCAL_REVIEW","REWORK","INTEGRATE","INTEGRATION_REWORK",
+  "FINAL_REVIEW_1","FINAL_REVIEW_2","FINAL_VERIFICATION","MERGE_MAIN","DONE","BLOCKED","FAILED","PAUSED"];
+// canonical state → happy-path pipeline index。
+// -1＝該 state 不在直線上（BLOCKED/FAILED/PAUSED/未知），改由 resume_state 決定 highlight；
+// 沒有有效 resume_state 也回 -1（pipeline 全灰，不猜）。
+function statePhaseIndex(st){
+  switch(st){
+    case "DISPATCH": return 0;
+    case "IMPLEMENT": return 1;
+    case "LOCAL_REVIEW": return 2;
+    case "REWORK": return 1;                       // rework 回 Implement 重做
+    case "INTEGRATE": return 4;
+    case "INTEGRATION_REWORK": return 4;           // 在 Integrate 段修正
+    case "FINAL_REVIEW_1":
+    case "FINAL_REVIEW_2":
+    case "FINAL_VERIFICATION": return 3;           // Final Review 段
+    case "MERGE_MAIN": return 5;
+    case "DONE": return 6;
+    default: return -1;                            // BLOCKED / FAILED / PAUSED / 未知 state
+  }
 }
-function phaseLabel(l){const i=lanePhaseIndex(l);return PHASES[Math.min(i,PHASES.length-1)].l;}
+// resume_state 驗證（spec 00_WORKFLOW_STATE.md §4）：
+// MUST 是 canonical state、MUST NOT 是 PAUSED/BLOCKED/FAILED、MUST NOT 等於目前 state；
+// 違反者視為 invalid → 回 null（GUI 不猜 previous phase，pipeline unknown/unhighlighted）。
+function validResumeState(l){
+  const rs=l.resume_state;
+  return (LANE_STATES.includes(rs)&&rs!=="PAUSED"&&rs!=="BLOCKED"&&rs!=="FAILED"&&rs!==l.state)?rs:null;
+}
+function lanePhaseIndex(l){
+  const i=statePhaseIndex(l.state);
+  return i>=0?i:statePhaseIndex(validResumeState(l));
+}
+function phaseLabel(l){
+  switch(l.state){
+    case "DISPATCH": return "Dispatch";
+    case "IMPLEMENT": return "Implement";
+    case "LOCAL_REVIEW": return "Local Review";
+    case "REWORK": return "REWORK";
+    case "INTEGRATE": return "Integrate";
+    case "INTEGRATION_REWORK": return "INTEGRATION_REWORK";
+    case "FINAL_REVIEW_1": return "Final Review 1";
+    case "FINAL_REVIEW_2": return "Final Review 2";
+    case "FINAL_VERIFICATION": return "Final Verification";
+    case "MERGE_MAIN": return "Merge Main";
+    case "DONE": return "Done";
+    case "BLOCKED": return "BLOCKED";
+    case "FAILED": return "FAILED";
+    case "PAUSED": return "PAUSED";
+    default: return l.state?String(l.state):"—";   // 未知 state：照實顯示，不推測
+  }
+}
+// Current State 附註：非 happy-path state 的回復位置（一律來自 resume_state metadata，不從 evidence 猜）
+function stateNote(l){
+  switch(l.state){
+    case "REWORK": return " ↳ Return to LOCAL_REVIEW after fix（rework 在 Implement 進行）";
+    case "INTEGRATION_REWORK": return " ↳ Return to INTEGRATE after integration fix";
+    case "PAUSED":
+    case "BLOCKED":
+    case "FAILED":{
+      const rs=validResumeState(l);
+      const lab=l.resume_state==null?"unknown":(rs?rs:`${l.resume_state}（invalid）`);
+      return ` ↳ Resume State: ${lab}`;
+    }
+    default: return "";
+  }
+}
 function pipelineHTML(l){
   const idx=lanePhaseIndex(l);
   const n=PHASES.length;
   const c=i=>(i+0.5)/n*100;                                       // 第 i 顆 dot 中心（%）
   const first=c(0), span=c(n-1)-first;
-  const fillPct=idx>=n-1?span:(c(idx)-first);
+  const fillPct=idx<0?0:(idx>=n-1?span:(c(idx)-first));
   const dur=l.dur||[];
   // 段間時間：dot i 與 dot i+1 的中點＝在第 i 個 phase 花了多久；phase 完成才顯示
   const segs=PHASES.slice(0,n-1).map((_,i)=>{
@@ -629,7 +723,7 @@ function miniHTML(l){
   }).join("")+`</div>`;
 }
 
-// ---- backlog 分配（sample；真實＝各 lane.conf items ＋ run.meta dispatch事件）----
+// ---- backlog 分配（sample；真實＝各 lane.yaml items ＋ events.jsonl dispatch 事件）----
 const BL_ST={
   unassigned:{cls:"unassigned",label:"未分配"},
   assigned:{cls:"assigned",label:"已分配·未派"},
@@ -648,10 +742,15 @@ const BACKLOG=[
    no_touch:["（reviewer 無 edit/write）"]},
   {id:"BL-GESTURE-008",title:"temporal window 聚合",lane:"gesture",who:"—（排隊，併發滿 2/2）",status:"queued",
    model:"local/Qwen3.8-27B",prompt:"（尚未dispatch；lane 併發已滿，QUEUED）",no_touch:["gesture/collect.py（Worker1 獨佔）"]},
-  {id:"BL-SED-003",title:"sound event detection 門檻",lane:"sed",who:"—（lane 已建，未派）",status:"assigned",
-   model:"—",prompt:"（lane.conf 已列入 items，orchestrator 尚未產dispatch prompt）",no_touch:[]},
+  {id:"BL-FACE-001",title:"face alignment EMA 參數化",lane:"face",who:"reviewer（審查中）",status:"reviewing",
+    model:"copilot/gpt-5.6-luna",prompt:"審查 worker BL-FACE-001 的 face_align.py diff：EMA 參數化 + 關鍵驗證，輸出 reviews/BL-FACE-001.pi.md（Verdict/Findings/Validation）。",
+    no_touch:["（reviewer 無 edit/write）"]},
+  {id:"BL-STT-001",title:"STT client retry/backoff",lane:"stt",who:"—（lane 已建，未派）",status:"assigned",
+    model:"—",prompt:"（lane.yaml 已列入 items，orchestrator 尚未產dispatch prompt）",no_touch:[]},
+  {id:"BL-CONFIG-001",title:"settings hot-reload",lane:"config",who:"Final Reviewer PASS（final_reviewer=0，人工確認）",status:"done",
+    model:"local/Qwen3.8-27B",prompt:"（已完成；lane PAUSED 中，merge --no-ff 待執行）",no_touch:[]},
   {id:"BL-WAKE-002",title:"wake word 靈敏度調校",lane:"wake",who:"Final Reviewer PASS",status:"merged",
-   model:"copilot/gpt-5.6-luna",prompt:"（已完成並合併進 main）",no_touch:[]},
+    model:"copilot/gpt-5.6-luna",prompt:"（已完成並合併進 main）",no_touch:[]},
   {id:"BL-GESTURE-009",title:"gesture 事件去抖",lane:"—",who:"—",status:"unassigned",
    model:"—",prompt:"（尚未納入任何 lane）",no_touch:[]},
 ];
@@ -673,42 +772,174 @@ const MERGE={
   merged: {cls:"merged", label:"✓ 已進 main"},
 };
 
+// ---- Configuration Layer：System Settings（~/.piforge/config.yaml）----
+// Pi Forge 整套系統怎麼運作。CLOUD（providers／認證／local vLLM）與 CHAINS（全域 role model chain）同屬 System 層。
+// 這些值絕不複製進 Project / Lane metadata；Lane / Project 用 null 表示 inherit。
+const SYSTEM={
+  chains:CHAINS,                                   // 全域 role model chain（System default）
+  concurrency:{pi_cap:8,lane_cap:3},               // 全域 Pi 併發 / lane 組成上限
+  defaults:{workers:2,reviewers:1,final:1,rework:5}, // 預設組成 / rework 上限
+  monitor:{poll_ms:4000,stall_min:8},              // Monitor 輪詢 / 停滯門檻
+  stop_dispatch_at:null,                           // 全域下班停派
+};
+// ---- Project Registry（~/.piforge/registry.yaml）：只記「Project 在哪裡」----
+// 不存 lane runtime state；真正 metadata 在 Project 內。
+const REGISTRY={robot:"~/Projects/RobotProject",mactp:"~/Projects/MacTP"};
+// ---- Project Settings（<ProjectRoot>/.piforge/project.yaml）----
+// 這個 repository 怎麼運作。null＝inherit System default。
+const PROJECTS={
+  robot:{id:"robot",name:"RobotProject",repo_root:"~/Projects/RobotProject",default_branch:"main",
+    validation:{build:"",tests:"",autotest:""},
+    runtime_assets:["models/","data/",".venv/","tools/agents/.venv/"],
+    protected_paths:["docs/","secrets/"],
+    defaults:{max_lanes:null,workers:null,reviewers:null,rework_max:null},
+    model_overrides:{orchestrator:null,worker:null,reviewer:null,final_review:null}},
+  mactp:{id:"mactp",name:"MacTP",repo_root:"~/Projects/MacTP",default_branch:"main",
+    validation:{build:"python -m build",tests:"pytest",autotest:"python tools/autotest.py"},
+    runtime_assets:[".venv/"],
+    protected_paths:["secrets/"],
+    defaults:{max_lanes:null,workers:null,reviewers:null,rework_max:3},
+    model_overrides:{orchestrator:null,worker:null,reviewer:null,final_review:null}},
+};
+// ---- Configuration Resolution（唯一解析入口；Lane → Project → System，null＝inherit）----
+// UI 各處一律呼叫這組 helper，不要散落 lane.foo || project.foo || system.foo。
+function projectOf(l){return PROJECTS[l&&l.project]||{};}
+function resolveChain(role,lane){
+  const ov=lane&&lane.model_overrides&&lane.model_overrides[role];
+  if(ov)return{val:ov,from:"lane"};
+  const pov=projectOf(lane).model_overrides&&projectOf(lane).model_overrides[role];
+  if(pov)return{val:pov,from:"project"};
+  const sysKey=role==="final_review"?"finalgate":role; // System chain 的 key 名（code 慣例 finalgate）
+  return{val:CHAINS[sysKey],from:"system"};
+}
+function resolveComp(lane,key){
+  const c=lane&&lane.composition&&lane.composition[key];
+  if(c!=null)return c;
+  const pd=projectOf(lane).defaults&&projectOf(lane).defaults[key];
+  if(pd!=null)return pd;
+  return SYSTEM.defaults[key];
+}
+function resolveRework(lane){
+  const p=lane&&lane.policy&&lane.policy.rework_max;
+  if(p!=null)return p;
+  const pd=projectOf(lane).defaults&&projectOf(lane).defaults.rework_max;
+  if(pd!=null)return pd;
+  return SYSTEM.defaults.rework;
+}
+function resolveRepoRoot(lane){return (projectOf(lane).repo_root)||"（未設）";}
+function resolveStopAt(lane){return (lane&&lane.schedule&&lane.schedule.stop_dispatch_at)||SYSTEM.stop_dispatch_at||"";}
+function lmFromLabel(f){return {system:"System",project:"Project"}[f]||f;}
+
 // ---- sample 狀態 ----
+// lane object 分三塊（對應 spec 00_CONFIGURATION_MODEL.md）：
+//   config（lane.yaml）＝要做什麼 / 有哪些 override（人可編輯）
+//   runtime（state.json）＝現在發生什麼（orchestrator 寫，GUI 只讀）
+//   events（events.jsonl）＝曾經發生什麼（append-only）
 const SAMPLE={
   main:"a3f9c21", pi:{running:2,cap:8}, tokens:1843220, copilot:{used:38,cap:300},
   lanes:[
-    {name:"gesture",project:"Gesture",branch:"integ/lane-gesture",base:"9c1e7b0",ahead:7,paused:false,elapsed:167,
-      workdir:"~/orch/gesture", merge:"open", comp:{workers:2,reviewers:1,final:1,rework:5},
-     items:["BL-GESTURE-006","BL-GESTURE-007","BL-GESTURE-008"], files:["collect.py","landmark.py"],
-      dur:[2,41,0,0,0,0,0],
-     models:{worker:{v:"local",m:"Qwen3.8-27B-nvfp4",e:"medium"},reviewer:{v:"copilot",m:"gpt-5.6-luna",e:"high"},final:{v:"copilot",m:"gpt-5.6-luna",e:"xhigh"}},
+    {name:"gesture",project:"robot",
+     // lane.yaml（config：這條 lane 要做什麼、有哪些 override；null＝inherit）
+     items:["BL-GESTURE-006","BL-GESTURE-007","BL-GESTURE-008"],
+     scope:{files:["collect.py","landmark.py"]},
+     composition:{workers:2,reviewers:1,final:1},
+     policy:{rework_max:null},
+     schedule:{stop_dispatch_at:null},
+     model_overrides:{orchestrator:null,worker:{v:"local",m:"Qwen3.8-27B-nvfp4",e:"medium"},reviewer:null,final_review:null},
+     // state.json（runtime：現在發生什麼；orchestrator 寫，GUI 只讀）
+     state:"REWORK",resume_state:null,
+     branch:"integration/gesture",base_sha:"9c1e7b0",ahead:7,merge:"open",
+     rework_count:2, reviews:3, gates:{task:"PASS",self:"PENDING",final:"—"},
+     elapsed:167,dur:[2,41,0,0,0,0,0],
      inflight:[
-       {role:"worker",task:"BL-GESTURE-007",status:"rework",age:4,stall:false,rework:2,
+       {role:"worker",task:"BL-GESTURE-007",status:"rework",age:4,stall:false,rework:2,session_ref:"s-8f3a21c0",
         model:"local/Qwen3.8-27B",fb:true,act:"edit tools/gesture/collect.py：加 --no-preview fail-safe"},
-       {role:"reviewer",task:"BL-GESTURE-006",status:"stall",age:11,stall:true,rework:0,
+       {role:"reviewer",task:"BL-GESTURE-006",status:"stall",age:11,stall:true,rework:0,session_ref:"s-41b9de07",
         model:"copilot/gpt-5.6-luna",fb:false,act:"reading diff… (jsonl 11m 未更新)"},
-       {role:"worker",task:"BL-GESTURE-008",status:"queued",age:0,stall:false,rework:0,
+       {role:"worker",task:"BL-GESTURE-008",status:"queued",age:0,stall:false,rework:0,session_ref:null,
         model:"local/Qwen3.8-27B",fb:false,act:"排隊中（lane 併發已滿 2/2）"}],
-     reviews:3, gates:{task:"PASS",self:"PENDING",final:"—"}},
-    {name:"sed",project:"Audio",branch:"integ/lane-sed",base:"77aa2d4",ahead:2,paused:true,stopAt:"21:30",elapsed:308,
-      workdir:"~/orch/audio", merge:"ready", comp:{workers:2,reviewers:1,final:0,rework:5},
-     items:["BL-SED-003"], files:["threshold.py"],
-      dur:[5,120,80,40,10,0,0],
-     models:{worker:{v:"local",m:"Qwen3.8-27B-nvfp4",e:"medium"},reviewer:{v:"copilot",m:"claude-opus-5",e:"high"},final:{v:"metered",m:"openai/gpt-5.6",e:"high"}},
-     inflight:[], reviews:1, gates:{task:"PASS",self:"PASS",final:"OFF"}},
-    {name:"wake",project:"Audio",branch:"integ/lane-wake",base:"a3f9c21",ahead:0,paused:false,elapsed:95,
-      workdir:"~/orch/audio", merge:"merged", comp:{workers:1,reviewers:1,final:1,rework:5},
-     items:["BL-WAKE-002"], files:["calib.py"],
-      dur:[3,30,12,8,5,2,0],
-     models:{worker:{v:"local",m:"Qwen3.8-27B-nvfp4",e:"medium"},reviewer:{v:"copilot",m:"gpt-5.6-luna",e:"high"},final:{v:"copilot",m:"claude-opus-5",e:"xhigh"}},
+     // events.jsonl（append-only history tail：曾經發生什麼）
+     events:[
+       {time:"2026-09-24T13:02:00+08:00",event:"LANE_CREATED",branch:"integration/gesture",base:"9c1e7b0"},
+       {time:"2026-09-24T13:04:00+08:00",event:"DISPATCH",role:"worker",task:"BL-GESTURE-007"},
+       {time:"2026-09-24T13:19:00+08:00",event:"PROVIDER_FALLBACK",role:"worker",task:"BL-GESTURE-007",got:"local/Qwen3.8-27B"},
+       {time:"2026-09-24T13:41:00+08:00",event:"LOCAL_REVIEW_FAIL",task:"BL-GESTURE-007"},
+       {time:"2026-09-24T13:42:00+08:00",event:"REWORK_START",count:1},
+       {time:"2026-09-24T14:05:00+08:00",event:"REWORK_START",count:2}]},
+    {name:"face",project:"robot",
+     items:["BL-FACE-001"],
+     scope:{files:["face_align.py"]},
+     composition:{workers:null,reviewers:null,final:1},
+     policy:{rework_max:3},
+     schedule:{stop_dispatch_at:null},
+     model_overrides:{orchestrator:null,worker:null,reviewer:null,final_review:null},
+     state:"LOCAL_REVIEW",resume_state:null,
+     branch:"integration/face",base_sha:"b2d44c8",ahead:3,merge:"open",
+     rework_count:0, reviews:1, gates:{task:"RUN",self:"PENDING",final:"—"},
+     elapsed:54,dur:[1,18,12,0,0,0,0],
      inflight:[
-       {role:"finalgate",task:"lane-wake",status:"done",age:2,stall:false,rework:0,
+       {role:"reviewer",task:"BL-FACE-001",status:"run",age:9,stall:false,rework:0,session_ref:"s-7c22ab41",
+        model:"copilot/gpt-5.6-luna",fb:false,act:"審查 diff：face_align.py EMA 參數"}],
+     events:[
+       {time:"2026-09-24T12:10:00+08:00",event:"LANE_CREATED",branch:"integration/face",base:"b2d44c8"},
+       {time:"2026-09-24T12:12:00+08:00",event:"DISPATCH",role:"worker",task:"BL-FACE-001"},
+       {time:"2026-09-24T12:35:00+08:00",event:"IMPLEMENT_DONE",task:"BL-FACE-001"},
+       {time:"2026-09-24T12:36:00+08:00",event:"LOCAL_REVIEW_START",task:"BL-FACE-001"}]},
+    {name:"stt",project:"robot",
+     items:["BL-STT-001"],
+     scope:{files:["stt_client.py"]},
+     composition:{workers:null,reviewers:null,final:null},
+     policy:{rework_max:null},
+     schedule:{stop_dispatch_at:null},
+     model_overrides:{orchestrator:null,worker:null,reviewer:null,final_review:null},
+     state:"DISPATCH",resume_state:null,
+     branch:"integration/stt",base_sha:"a3f9c21",ahead:0,merge:"open",
+     rework_count:0, reviews:0, gates:{task:"—",self:"—",final:"—"},
+     elapsed:6,dur:[1,0,0,0,0,0,0],
+     inflight:[],
+     events:[
+       {time:"2026-09-24T14:55:00+08:00",event:"LANE_CREATED",branch:"integration/stt",base:"a3f9c21"}]},
+    {name:"config",project:"mactp",
+     items:["BL-CONFIG-001"],
+     scope:{files:["settings.py"]},
+     composition:{workers:1,reviewers:1,final:0},
+     policy:{rework_max:null},
+     schedule:{stop_dispatch_at:"21:30"},
+     model_overrides:{orchestrator:null,worker:null,reviewer:null,final_review:null},
+     state:"PAUSED",resume_state:"MERGE_MAIN",
+     branch:"integration/config",base_sha:"77aa2d4",ahead:2,merge:"ready",
+     rework_count:0, reviews:1, gates:{task:"PASS",self:"PASS",final:"OFF"},
+     elapsed:308,dur:[5,120,80,40,10,0,0],
+     inflight:[],
+     events:[
+       {time:"2026-09-23T18:02:00+08:00",event:"LANE_CREATED",branch:"integration/config",base:"77aa2d4"},
+       {time:"2026-09-23T20:41:00+08:00",event:"FINAL_REVIEW_2_SKIP",reason:"final_reviewer=0（人工 opt-out）"},
+       {time:"2026-09-23T21:30:00+08:00",event:"PAUSED",reason:"stop_dispatch_at=21:30",resume_state:"MERGE_MAIN"}]},
+    {name:"wake",project:"mactp",
+     items:["BL-WAKE-002"],
+     scope:{files:["calib.py"]},
+     composition:{workers:1,reviewers:1,final:1},
+     policy:{rework_max:null},
+     schedule:{stop_dispatch_at:null},
+     model_overrides:{orchestrator:null,worker:null,reviewer:null,final_review:null},
+     state:"DONE",resume_state:null,
+     branch:"integration/wake",base_sha:"a3f9c21",ahead:0,merge:"merged",
+     rework_count:0, reviews:2, gates:{task:"PASS",self:"PASS",final:"PASS"},
+     elapsed:95,dur:[3,30,12,8,5,2,0],
+     inflight:[
+       {role:"finalgate",task:"lane-wake",status:"done",age:2,stall:false,rework:0,session_ref:"s-d041f6aa",
         model:"copilot/gpt-5.6-luna",fb:false,act:"Final Reviewer PASS → 已 merge（rc=0）"}],
-     reviews:2, gates:{task:"PASS",self:"PASS",final:"PASS"}},
+     events:[
+       {time:"2026-09-22T09:11:00+08:00",event:"LANE_CREATED",branch:"integration/wake",base:"a3f9c21"},
+       {time:"2026-09-22T10:20:00+08:00",event:"FINAL_VERIFICATION_PASS"},
+       {time:"2026-09-22T10:24:00+08:00",event:"MERGED_TO_MAIN",base:"a3f9c21"},
+       {time:"2026-09-22T10:24:01+08:00",event:"LANE_DONE"}]},
   ],
 };
 let STATE={live:false,data:SAMPLE,selLane:null};
-let NEWCOMP={workers:2,reviewers:1,final:1,rework:5};
+// New Lane modal 的組成 draft：null＝inherit（Project → System），按 ± 才變成 override
+let NEWCOMP={workers:null,reviewers:null,final:null,rework_max:null};
+let nlProject=null; // null＝頂層「＋ New」（需選 Project）；否則＝從該 Project 進來（read-only context）
 let dispatchPick={v:"copilot",m:"gpt-5.6-luna",e:"medium"};
 const esc=s=>(s==null?"":String(s)).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 const fmtDur=min=>{const h=Math.floor(min/60),m=min%60;return h?`${h}h${m}m`:`${m}m`;};
@@ -872,15 +1103,22 @@ function renderLaneList(d){
     const collapsed=collapsedProjects.has(proj);
     const items=lanes.map(l=>{
       const mb=MERGE[l.merge]||MERGE.open;
+      const sm=l.state==="PAUSED"?` <span style="color:var(--action);font-weight:700">⏸ 暫停</span>`
+        :l.state==="BLOCKED"?` <span style="color:var(--action);font-weight:700">⛔ BLOCKED</span>`
+        :l.state==="FAILED"?` <span style="color:var(--action);font-weight:700">✗ FAILED</span>`:"";
       return `<div class="lane-item ${l.name===STATE.selLane?"sel":""}" data-lane="${esc(l.name)}">`
         +`<div class="li-top"><span class="name">${esc(l.name)}</span><span class="mb ${mb.cls}">${mb.label}</span></div>`
         +miniHTML(l)
-        +`<div class="li-ph">◉ ${phaseLabel(l)} <span class="muted">· ⏱ ${fmtDur(l.elapsed||0)}</span>${l.paused?` <span style="color:var(--action);font-weight:700">⏸ 暫停</span>`:""}</div>`
+        +`<div class="li-ph">◉ ${phaseLabel(l)} <span class="muted">· ⏱ ${fmtDur(l.elapsed||0)}</span>${sm}</div>`
       +`</div>`;
     }).join("");
+    const p=PROJECTS[proj]||{name:proj,repo_root:""};
     return `<div class="proj">`
       +`<div class="proj-head" data-proj-toggle="${esc(proj)}"><span class="caret">${collapsed?"▸":"▾"}</span>`
-      +`<span class="proj-name">${esc(proj)}</span><span class="proj-count">${lanes.length}</span></div>`
+      +`<span class="proj-name" title="Project Settings：${esc(p.repo_root||"（未設 repo_root）")}（.piforge/project.yaml）">${esc(p.name||proj)}</span>`
+      +`<button class="btn sm" data-proj-new="${esc(proj)}" title="在此 Project 下新增 Lane">＋</button>`
+      +`<button class="btn sm" data-proj-settings="${esc(proj)}" title="Project Settings（.piforge/project.yaml）">⚙</button>`
+      +`<span class="proj-count">${lanes.length}</span></div>`
       +`<div class="proj-body"${collapsed?' style="display:none"':""}>${items}</div>`
     +`</div>`;
   }).join("");
@@ -898,7 +1136,7 @@ function agentsHTML(l){
       +`<div class="a-sub">`
         +`<span class="mdl ${p.fb?"fb":""}">${p.fb?"↘ ":""}${esc(p.model)}${p.fb?"（fallback）":""}</span>`
         +`<span>age ${p.age}m</span>`
-        +(p.role==="worker"?`<span class="rw">rework <b>${p.rework}</b>/${l.comp.rework}</span>`:``)
+        +(p.role==="worker"?`<span class="rw">rework <b>${p.rework}</b>/${resolveRework(l)}</span>`:``)
       +`</div>`
       +`<div class="a-act">↳ ${esc(p.act||"")}</div>`
     +`</div>`;
@@ -908,21 +1146,20 @@ function laneDetailHTML(l){
   const mb=MERGE[l.merge]||MERGE.open;
   return `<div class="dhead"><span class="name">${esc(l.name)}</span>`
     +`<span class="mb ${mb.cls}">${mb.label}${l.merge!=="merged"&&l.ahead?` +${l.ahead}`:""}</span></div>`
-    +`<div class="muted" style="font-size:11px">${esc(l.branch)} · base ${esc(l.base)} · 領先 main +${l.ahead} · ⏱ ${fmtDur(l.elapsed||0)}</div>`
-    +`<div class="wdirrow"><span class="wdir" title="RobotProject workdir（找/存檔案限此目錄）· lane 設定在 .piforge/lanes/&lt;lane&gt;/lane.yaml">📁 ${esc(l.workdir||"（未設工作目錄）")}</span>`
-    +`<span class="muted" style="font-size:10px;white-space:nowrap">= RobotProject 根 · 找/存檔案限此目錄</span>`
-    +`<button class="btn sm" data-wdir="${esc(l.name)}">變更</button></div>`
+    +`<div class="muted" style="font-size:11px">${esc(l.branch)} · base ${esc(l.base_sha)} · 領先 main +${l.ahead} · ⏱ ${fmtDur(l.elapsed||0)}</div>`
+    +`<div class="wdirrow"><span class="wdir" title="Project repo_root（.piforge/project.yaml）· lane 繼承">📁 ${esc(resolveRepoRoot(l))}</span>`
+    +`<span class="muted" style="font-size:10px;white-space:nowrap">= Project repo root · lane 繼承</span></div>`
     +pipelineHTML(l)
-    +`<div class="muted" style="font-size:10px">W${l.comp.workers} · R${l.comp.reviewers} · Final Reviewer ${l.comp.final||"OFF ⚠"} · rework≤${l.comp.rework} · reviews=${l.reviews}</div>`
+    +`<div class="muted" style="font-size:10px">W${resolveComp(l,"workers")} · R${resolveComp(l,"reviewers")} · Final Reviewer ${resolveComp(l,"final")||"OFF ⚠"} · rework≤${resolveRework(l)} · reviews=${l.reviews}</div>`
     +`<div style="height:4px"></div>`
     +agentsHTML(l)
     +`<div class="foot">`
       +`<span class="muted" style="font-size:10px">Gate: T=${esc(l.gates.task)} · 自審=${esc(l.gates.self)} · Final Reviewer=${esc(l.gates.final)}</span>`
-      +`<button class="btn sm" data-pause="${esc(l.name)}">${l.paused?"▶ RESUME":"⏸ PAUSE"}</button>`
+      +`<button class="btn sm" data-pause="${esc(l.name)}">${l.state==="PAUSED"?"▶ RESUME":"⏸ PAUSE"}</button>`
     +`</div>`
     +`<div class="foot" style="margin-top:4px">`
-      +`<span class="rw">⏱ 排程停止 <input type="time" data-stop="${esc(l.name)}" value="${esc(l.stopAt||'')}" style="width:auto;display:inline-block;padding:1px 4px;font-size:10px"> <span class="muted">到點只停dispatch，in-flight 做完</span></span>`
-      +(l.stopAt?`<span class="mb ready">⏱ ${esc(l.stopAt)}</span>`:``)
+      +`<span class="rw">⏱ 排程停止 <input type="time" data-stop="${esc(l.name)}" value="${esc((l.schedule&&l.schedule.stop_dispatch_at)||'')}" style="width:auto;display:inline-block;padding:1px 4px;font-size:10px"> <span class="muted">到點只停dispatch，in-flight 做完</span></span>`
+      +((l.schedule&&l.schedule.stop_dispatch_at)?`<span class="mb ready">⏱ ${esc(l.schedule.stop_dispatch_at)}</span>`:``)
     +`</div>`;
 }
 function emptyLaneHTML(){
@@ -944,7 +1181,7 @@ function renderGitTab(d){
   box.innerHTML=`<div class="tlabel" style="margin-top:14px">各 lane branch（領先 main）</div>`
     +`<table class="git-tab"><thead><tr><th>lane</th><th>branch</th><th>base</th><th>ahead</th><th>merge</th></tr></thead><tbody>`
     +d.lanes.map(l=>{const mb=MERGE[l.merge]||MERGE.open;
-      return `<tr><td><b>${esc(l.name)}</b></td><td class="mono">${esc(l.branch)}</td><td class="mono">${esc(l.base)}</td><td>+${l.ahead}</td><td><span class="mb ${mb.cls}">${mb.label}</span></td></tr>`;
+      return `<tr><td><b>${esc(l.name)}</b></td><td class="mono">${esc(l.branch)}</td><td class="mono">${esc(l.base_sha)}</td><td>+${l.ahead}</td><td><span class="mb ${mb.cls}">${mb.label}</span></td></tr>`;
     }).join("")+`</tbody></table>`;
 }
 function render(){
@@ -987,7 +1224,7 @@ const LD_TABS=[
 let ldTab="dispatch";
 let dispatchState={task:"",prompt:"",pick:dispatchPick};
 
-function curPhaseId(l){const i=lanePhaseIndex(l);return PHASES[Math.min(i,PHASES.length-1)].id;}
+function curPhaseId(l){const i=lanePhaseIndex(l);return i<0?null:PHASES[Math.min(i,PHASES.length-1)].id;}
 function renderCenter(){
   const d=STATE.data, box=$("#lane-detail");
   let lane=null;
@@ -1005,14 +1242,14 @@ function renderCenter(){
   box.innerHTML=
     `<div class="dhead"><span class="name">${esc(lane.name)}</span>`
     +`<span class="mb ${mb.cls}">${mb.label}${lane.merge!=="merged"&&lane.ahead?` +${lane.ahead}`:""}</span>`
-    +`<button class="btn sm" data-pause="${esc(lane.name)}">${lane.paused?"▶ RESUME":"⏸ PAUSE"}</button></div>`
-    +`<div class="muted" style="font-size:11px;margin-top:2px">${esc(lane.branch)} · base ${esc(lane.base)} · ⏱ ${fmtDur(lane.elapsed||0)}</div>`
-    +`<div class="wdirrow"><span class="wdir" title="RobotProject workdir（找/存檔案限此目錄）· lane 設定在 .piforge/lanes/&lt;lane&gt;/lane.yaml">📁 ${esc(lane.workdir||"（未設工作目錄）")}</span>`
-    +`<span class="muted" style="font-size:10px;white-space:nowrap">= RobotProject 根 · 找/存檔案限此目錄</span>`
-    +`<button class="btn sm" data-wdir="${esc(lane.name)}">變更</button></div>`
+    +`<button class="btn sm" data-pause="${esc(lane.name)}">${lane.state==="PAUSED"?"▶ RESUME":"⏸ PAUSE"}</button></div>`
+    +`<div class="muted" style="font-size:11px;margin-top:2px">${esc((projectOf(lane).name)||lane.project)} · ${esc(lane.branch)} · base ${esc(lane.base_sha)} · ⏱ ${fmtDur(lane.elapsed||0)}</div>`
+    +`<div class="muted" style="font-size:11px;margin-top:2px">Current State: <b style="color:var(--fg)">${esc(lane.state||"—")}</b>${stateNote(lane)}</div>`
+    +`<div class="wdirrow"><span class="wdir" title="Project repo_root（.piforge/project.yaml）· lane 繼承，不在 lane 設定">📁 ${esc(resolveRepoRoot(lane))}</span>`
+    +`<span class="muted" style="font-size:10px;white-space:nowrap">= Project repo root · lane 繼承（要改請用 ⚙ Project Settings）</span></div>`
     +pipelineHTML(lane)
     +`<div class="ldtabs">`+LD_TABS.map(t=>
-      `<div class="ldtab ${t.id===ldTab?"sel":""}" data-ldtab="${t.id}">${t.l}${t.id===cur?'<span class="cur" title="目前階段"></span>':""}</div>`).join("")+`</div>`
+      `<div class="ldtab ${t.id===ldTab?"sel":""}" data-ldtab="${t.id}">${t.l}${cur&&t.id===cur?'<span class="cur" title="目前階段"></span>':""}</div>`).join("")+`</div>`
     +`<div class="ldpanel" id="ld-panel">${ldTabContent(lane,ldTab)}</div>`;
   if(ldTab==="dispatch")renderDispatchPicker();
 }
@@ -1038,7 +1275,7 @@ function tabBacklog(l){
   const items=(BACKLOG||[]).filter(b=>b.lane===l.name);
   if(!items.length) return `<div class="tlabel">Backlog（本 lane）</div>`
     +`<div class="muted" style="font-size:11px">（此 lane 未分配 backlog item）</div>`
-    +`<div class="muted" style="font-size:10px;margin-top:6px">來源＝lane.conf items ＋ run.meta dispatch 事件（純機械）。每個 lane 對應不同專案，backlog 隨 lane。</div>`;
+    +`<div class="muted" style="font-size:10px;margin-top:6px">來源＝lane.yaml items ＋ events.jsonl dispatch 事件（純機械）。每個 lane 屬於一個 Project，backlog 隨 lane。</div>`;
   return `<div class="tlabel">Backlog（本 lane · ${items.length}）<span class="muted">點一列展開</span></div>`
     +items.map(b=>{
       const st=BL_ST[b.status]||BL_ST.unassigned;
@@ -1055,74 +1292,84 @@ function gateBox(id,name,sub,val){
   return `<div class="gate ${cls}"><div class="kv"><span>${name}</span><span>${esc(val||"—")}</span></div><div class="sub">${sub}</div></div>`;
 }
 function tabOverview(l){
-  const g=l.gates||{};
+  const g=l.gates||{}, p=projectOf(l);
   const items=(l.items||[]).map(x=>`<span class="chip ready">${esc(x)}</span>`).join(" ")||`<span class="muted">（無）</span>`;
-  const files=(l.files||[]).map(x=>`<span class="chip prem">${esc(x)}</span>`).join(" ")||`<span class="muted">（無）</span>`;
+  const files=((l.scope&&l.scope.files)||[]).map(x=>`<span class="chip prem">${esc(x)}</span>`).join(" ")||`<span class="muted">（無）</span>`;
   return `<div class="tlabel">總覽 · 建立參數</div>`
-    +`<div class="kv"><span>Branch</span><span>${esc(l.branch)} · base ${esc(l.base)} · 領先 main +${l.ahead}</span></div>`
+    +`<div class="kv"><span>Project</span><span>${esc(p.name||l.project)} · repo_root ${esc(resolveRepoRoot(l))} · ${esc(p.default_branch||"main")}</span></div>`
+    +`<div class="kv"><span>Branch</span><span>${esc(l.branch)} · base ${esc(l.base_sha)} · 領先 main +${l.ahead}</span></div>`
     +`<div class="kv"><span>已工作</span><span>${fmtDur(l.elapsed||0)}</span></div>`
     +`<label>Items（backlog）</label><div>${items}</div>`
-    +`<label>Files（檔重疊檢查，相對 workdir）</label><div>${files}</div>`
+    +`<label>Scope / Files（檔重疊檢查，相對 repo root）</label><div>${files}</div>`
     +`<div class="tlabel" style="margin-top:12px">In-flight pi <span class="muted">${l.inflight.length}</span></div>`
     +agentsHTML(l)
     +`<div class="foot" style="margin-top:8px"><span class="muted" style="font-size:10px">Gate: Local=${esc(g.task)}/${esc(g.self)} · Final=${esc(g.final)}</span>`
-    +`<span class="muted" style="font-size:10px">W${l.comp.workers} · R${l.comp.reviewers} · Final Reviewer ${l.comp.final||"OFF ⚠"} · reviews=${l.reviews}</span></div>`
-    +`<div class="muted" style="font-size:10px;margin-top:8px">工作目錄、組成、排程停止等 lane 設定在「設定」頁。</div>`;
+    +`<span class="muted" style="font-size:10px">W${resolveComp(l,"workers")} · R${resolveComp(l,"reviewers")} · Final Reviewer ${resolveComp(l,"final")||"OFF ⚠"} · rework≤${resolveRework(l)} · reviews=${l.reviews}</span></div>`
+    +`<div class="muted" style="font-size:10px;margin-top:8px">lane 自身設定（組成 / 模型 / 排程 override）在「設定」頁；repo root / validation 在 ⚙ Project Settings。</div>`;
 }
-// lane 設定（工作目錄 / 組成 / 排程停止）——屬於該 lane
+// Lane Settings（lane.yaml）：只存「這條 lane 本身」的設定。
+// repo_root / default branch / validation ＝ Project Settings；providers / 全域 chain / Pi cap ＝ System Settings。
 function tabSettings(l){
-  return `<div class="tlabel">Lane 設定</div>`
-    +`<label>工作目錄 workdir（RobotProject 根目錄；找 / 存檔案都限在這裡，會儲存；lane 設定在 .piforge/lanes/&lt;lane&gt;/lane.yaml）</label>`
-    +`<div class="wdirrow"><span class="wdir" title="RobotProject workdir（找/存檔案限此目錄）· lane 設定在 .piforge/lanes/&lt;lane&gt;/lane.yaml">📁 ${esc(l.workdir||"（未設工作目錄）")}</span>`
-    +`<button class="btn sm" data-wdir="${esc(l.name)}">變更</button></div>`
-    +`<label>Lane 組成（受 ORCH_LANE_CAP=3 / ORCH_PI_CAP=8 夾住）</label>`
+  return `<div class="tlabel">Lane Settings（<code>lanes/${esc(l.name)}/lane.yaml</code> · 只存這條 lane 的設定）</div>`
+    +`<div class="muted" style="font-size:10px;margin:0 0 8px">inherit（null）時不複製上層值，上層變更後自動跟新。repo root / default branch / validation 在 ⚙ Project Settings；providers / 全域 chain / Pi cap 在頂層 System Settings。</div>`
+    +`<label>Lane 組成（null＝inherit：Lane → Project → System；按 ± 才寫成 lane override）</label>`
     +`<div class="comprow">`
       +compStepper(l,"workers","Workers",1,3)
       +compStepper(l,"reviewers","Reviewers",0,3)
       +compStepper(l,"final","Final Reviewer",0,1)
-      +compStepper(l,"rework","rework/task",0,20)
+      +compStepper(l,"rework_max","rework/task",0,20)
     +`</div>`
     +`<div class="muted" style="font-size:10px;margin-top:4px">只影響之後dispatch，絕不中斷已派出去的 worker/reviewer/Final Reviewer（降數量＝不再派新的、超出的自然做完）。</div>`
-    +(l.comp.final===0?`<div class="redwarn show">⚠ 已關閉獨立 Final Reviewer（=0），合併僅靠人工確認。</div>`:``)
-    +`<label>角色模型（per-lane 覆寫：Cloud 廠商 → 模型 → 思考強度）</label>`
+    +(resolveComp(l,"final")===0?`<div class="redwarn show">⚠ 已關閉獨立 Final Reviewer（=0），合併僅靠人工確認。</div>`:``)
+    +`<label>角色模型（override 可選；Inherit 時不保存解析值）</label>`
     +LANE_MODEL_ROLES.map(r=>`<div class="lm-block"><div class="lm-label">${esc(r.label)}</div>${pickerHTML(l,r.key)}</div>`).join("")
-    +`<div class="muted" style="font-size:10px;margin-top:4px">此 lane 的dispatch首選；未設定時沿用頂層「設定 → 模型設定」的全域 chain。停用／未接通的廠商（見「Pi Cloud 串聯」）不會被選用。</div>`
-    +`<label>排程停止（per-lane 覆寫全域下班時間）</label>`
-    +`<div class="row" style="margin-top:0"><input type="time" data-stop="${esc(l.name)}" value="${esc(l.stopAt||'')}" style="width:auto">`
-    +`<span class="muted" style="font-size:10px">到點只停dispatch，in-flight 做完</span>`
-    +(l.stopAt?`<span class="mb ready">⏱ ${esc(l.stopAt)}</span>`:``)+`</div>`;
+    +`<div class="muted" style="font-size:10px;margin-top:4px">解析順序：Lane Override → Project Override → System Default（頂層「設定 → 模型設定」）。停用／未接通的廠商不會被選用。</div>`
+    +`<label>排程停止（lane override；空＝inherit System 全域下班時間）</label>`
+    +`<div class="row" style="margin-top:0"><input type="time" data-stop="${esc(l.name)}" value="${esc((l.schedule&&l.schedule.stop_dispatch_at)||"")}" style="width:auto">`
+    +`<span class="muted" style="font-size:10px">到點只停dispatch，in-flight 做完${(l.schedule&&l.schedule.stop_dispatch_at)?"":`（inherit System：${resolveStopAt(l)||"未設"}）`}</span>`
+    +((l.schedule&&l.schedule.stop_dispatch_at)?`<span class="mb ready">⏱ ${esc(l.schedule.stop_dispatch_at)}</span>`:``)+`</div>`;
 }
 function compStepper(l,key,label,lo,hi){
-  const cur=l.comp[key]??0;
-  return `<div class="f"><span>${label}</span><div class="stepper" data-comp="${esc(l.name)}" data-key="${key}" data-lo="${lo}" data-hi="${hi}">`
+  const isRework=key==="rework_max";
+  const ov=isRework?(l.policy&&l.policy.rework_max):(l.composition&&l.composition[key]);
+  const cur=isRework?resolveRework(l):resolveComp(l,key);
+  const chip=ov==null?`<span class="chip ready" style="margin-left:5px">inherit</span>`
+                    :`<span class="chip prem" style="margin-left:5px">override</span>`;
+  return `<div class="f"><span>${label}${chip}</span><div class="stepper" data-comp="${esc(l.name)}" data-key="${key}" data-lo="${lo}" data-hi="${hi}">`
     +`<button data-d="-1">−</button><span class="val">${cur}</span><button data-d="1">＋</button></div></div>`;
 }
-// ---- per-lane 角色模型（worker/reviewer/final：廠商 → 模型 → 思考強度）----
+// ---- per-lane 角色模型 override（可選；null＝inherit Project → System，不保存解析值）----
 const LANE_MODEL_ROLES=[
-  {key:"orchestrator", label:"Orchestrator",   chain:"orchestrator"},
-  {key:"worker",       label:"Worker",         chain:"worker"},
-  {key:"reviewer",     label:"Reviewer",       chain:"reviewer"},
-  {key:"final",        label:"Final Reviewer", chain:"finalgate"},
+  {key:"orchestrator", label:"Orchestrator"},
+  {key:"worker",       label:"Worker"},
+  {key:"reviewer",     label:"Reviewer"},
+  {key:"final_review", label:"Final Reviewer"},
 ];
-function ensureLaneModels(l){
-  if(!l.models)l.models={};
-  LANE_MODEL_ROLES.forEach(r=>{ if(!l.models[r.key]) l.models[r.key]={...CHAINS[r.chain][0]}; });
-  return l.models;
-}
-function pickerHTML(l,role){
-  const val=ensureLaneModels(l)[role];
+function modelSelects(l,role,val){
   return `<div class="lm-row" data-lmlane="${esc(l.name)}" data-lmrole="${role}">`
     +`<select data-lm="v">${VENDORS.map(v=>`<option value="${v.id}" ${v.id===val.v?"selected":""}>${esc(v.label)}</option>`).join("")}</select>`
     +`<select data-lm="m">${(MODELS[val.v]||[]).map(m=>`<option ${m===val.m?"selected":""}>${esc(m)}</option>`).join("")}</select>`
-    +`<select data-lm="e">${EFFORTS.map(e=>`<option ${e===val.e?"selected":""}>${e}</option>`).join("")}</select>`
+    +`<select data-lm="e">${EFFORTS.map(e=>`<option ${e===val.e?"selected":""}>${esc(e)}</option>`).join("")}</select>`
     +`</div>`;
 }
-function saveLaneModels(l){try{localStorage.setItem("orch_models_"+l.name,JSON.stringify(l.models));}catch(e){}}
+function pickerHTML(l,role){
+  const ov=l.model_overrides&&l.model_overrides[role];
+  const res=resolveChain(role,l);
+  const src={system:"System",project:"Project",lane:"Lane"}[res.from]||res.from;
+  return `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">`
+    +`<label style="margin:0;display:inline-flex;gap:4px;align-items:center"><input type="radio" data-lmradio="${role}" data-lmlane="${esc(l.name)}" data-lmfrom="${res.from}" value="inherit" ${ov?"":"checked"} style="width:auto">Inherit</label>`
+    +`<label style="margin:0;display:inline-flex;gap:4px;align-items:center"><input type="radio" data-lmradio="${role}" data-lmlane="${esc(l.name)}" data-lmfrom="${res.from}" value="override" ${ov?"checked":""} style="width:auto">Override</label>`
+    +(ov
+      ?modelSelects(l,role,ov)
+      :`<span class="muted" style="font-size:10px">← ${src} default：${esc(res.val.v)}/${esc(res.val.m)}（effort ${esc(res.val.e)}）</span>`)
+    +`</div>`;
+}
+function saveLaneModels(l){try{localStorage.setItem("orch_models_"+l.name,JSON.stringify(l.model_overrides));}catch(e){}}
 function tabImplement(l){
   const ws=l.inflight.filter(p=>p.role==="worker");
   return `<div class="tlabel">Implement（實作 · 成本重心，local 優先）</div>`
     +(ws.length?ws.map(p=>agentOne(p,l)).join(""):`<div class="muted" style="font-size:11px">（目前無 in-flight worker）</div>`)
-    +`<div class="muted" style="font-size:10px;margin-top:8px">Local/Final Review FAIL → REWORK → 回到 Implement（rework 達上限 ${l.comp.rework} 會沿 chain 換一家重打）。</div>`
+    +`<div class="muted" style="font-size:10px;margin-top:8px">Local/Final Review FAIL → REWORK → 回到 Implement（rework 達上限 ${resolveRework(l)} 會沿 chain 換一家重打）。</div>`
     +phaseLogSection(l,"implement");
 }
 function tabLocalReview(l){
@@ -1168,7 +1415,7 @@ function tabMergeMain(l){
 function tabDone(l){
   const done=l.merge==="merged";
   return `<div class="tlabel">Done（結案）</div>`
-    +`<div class="gate ${done?"pass":"wait"}"><div class="kv"><span>狀態</span><span>${done?"✓ 已進 main（"+esc(l.base)+"）":"lane 尚未結案"}</span></div></div>`
+    +`<div class="gate ${done?"pass":"wait"}"><div class="kv"><span>狀態</span><span>${done?"✓ 已進 main（"+esc(l.base_sha)+"）":"lane 尚未結案"}</span></div></div>`
     +`<div class="muted" style="font-size:10px;margin-top:8px">結案後 Pi 可回頭看各 phase log 產出「流程改善建議」（見「建議」頁）。</div>`
     +phaseLogSection(l,"done");
 }
@@ -1199,7 +1446,7 @@ function piStreamText(l){
     const roleLabel={worker:"worker",reviewer:"reviewer",finalgate:"final-gate"}[p.role]||p.role;
     lines.push(`── [${roleLabel}] ${p.task} · ${p.model} · ${p.stall?"⚠ 停滯":"● 執行中"} ──`);
     lines.push(`   ↳ ${p.act||"（無活動摘要）"}`);
-    lines.push(`   age ${p.age}m${p.role==="worker"?` · rework ${p.rework}/${l.comp.rework}`:""}`);
+    lines.push(`   age ${p.age}m${p.role==="worker"?` · rework ${p.rework}/${resolveRework(l)}`:""}`);
     lines.push("");
   });
   return lines.join("\n").trimEnd();
@@ -1212,10 +1459,10 @@ function phaseLogText(l,phase){
   const agentLine=p=>`[${roleTag(p.role)}] ${p.task} · ${p.model}${p.fb?"（fallback）":""} · ${p.status}\n   ↳ ${p.act||"-"}`;
   switch(phase){
     case "dispatch":
-      return `lane ${l.name} 建立\n  branch=${l.branch}  base=${l.base}\n  workdir=${l.workdir||"-"}\n  items=${(l.items||[]).join(", ")}\n  files=${(l.files||[]).join(", ")}\n  comp=W${l.comp.workers}/R${l.comp.reviewers}/Final Reviewer${l.comp.final||"OFF"}/rework≤${l.comp.rework}\nOK: 可 dispatch`;
+      return `lane ${l.name} 建立\n  project=${projectOf(l).name||l.project}  repo_root=${resolveRepoRoot(l)}（project 繼承）\n  branch=${l.branch}  base_sha=${l.base_sha}\n  items=${(l.items||[]).join(", ")}\n  scope.files=${((l.scope&&l.scope.files)||[]).join(", ")}\n  comp=W${resolveComp(l,"workers")}/R${resolveComp(l,"reviewers")}/Final Reviewer${resolveComp(l,"final")||"OFF"}/rework≤${resolveRework(l)}\nOK: 可 dispatch`;
     case "implement":{
       const a=pick("worker");
-      return a.length?a.map(p=>agentLine(p)+`\n   age ${p.age}m · rework ${p.rework}/${l.comp.rework}`).join("\n\n"):"（此 phase 目前無 worker log）";
+      return a.length?a.map(p=>agentLine(p)+`\n   age ${p.age}m · rework ${p.rework}/${resolveRework(l)}`).join("\n\n"):"（此 phase 目前無 worker log）";
     }
     case "local_review":{
       const a=pick("reviewer");
@@ -1231,10 +1478,10 @@ function phaseLogText(l,phase){
         : `merge --dry-run：…\n整合測試：…\n（尚未進 main，領先 main +${l.ahead}）`;
     case "merge_main":
       return l.merge==="merged"
-        ? `merge --no-ff ${l.branch} → main（base ${l.base}）\npush OK\nMERGED_TO_MAIN ${l.base}`
+        ? `merge --no-ff ${l.branch} → main（base_sha ${l.base_sha}）\npush OK\nMERGED_TO_MAIN ${l.base_sha}`
         : `（尚未合併，領先 main +${l.ahead}）`;
     case "done":
-      return l.merge==="merged"?`OK: lane ${l.name} 已進 main（${l.base}）\nDONE`:"（尚未完結）";
+      return l.merge==="merged"?`OK: lane ${l.name} 已進 main（${l.base_sha}）\nDONE`:"（尚未完結）";
   }
   return "";
 }
@@ -1243,34 +1490,39 @@ function phaseLogSection(l,phase){
   return `<label style="margin-top:10px">Pi Log · ${name}（此 phase 持久化）</label>`
     +`<pre class="log" style="min-height:60px;max-height:170px">${logHTML(phaseLogText(l,phase))}</pre>`;
 }
-// ---- Log / 事件流（每 lane 一頁；真實來源 logs/&lt;lane&gt;/ 與 run.meta 依 lane 過濾）----
+// ---- Log / 事件流（每 lane 一頁；真實來源 logs/&lt;lane&gt;/ 與 lanes/&lt;lane&gt;/events.jsonl）----
 function laneLogText(l){
   const L=[];
-  L.push(`── lane ${l.name} · ${l.branch} · base ${l.base} ──`);
+  L.push(`── lane ${l.name} · ${l.branch} · base_sha ${l.base_sha} ──`);
   const inf=l.inflight||[];
   if(!inf.length) L.push("（此 lane 目前無 in-flight pi log）");
   inf.forEach(p=>{
     L.push(`[${roleTag(p.role)}] ${p.task} · ${p.model}${p.fb?"（fallback）":""} · ${p.stall?"STALL":p.status}`);
     L.push(`   ↳ ${p.act||"（無活動摘要）"}`);
-    L.push(`   age ${p.age}m${p.role==="worker"?` · rework ${p.rework}/${l.comp.rework}`:""}`);
+    L.push(`   age ${p.age}m${p.role==="worker"?` · rework ${p.rework}/${resolveRework(l)}`:""}`);
   });
   const g=l.gates||{};
   L.push(`[gate] task=${g.task||"-"} self=${g.self||"-"} final=${g.final||"-"}`);
-  L.push(l.merge==="merged"?`OK: MERGED_TO_MAIN ${l.base}`:`MERGE: ${l.merge}（尚未進 main）`);
+  L.push(l.merge==="merged"?`OK: MERGED_TO_MAIN ${l.base_sha}`:`MERGE: ${l.merge}（尚未進 main）`);
   return L.join("\n");
 }
+// 事件流＝events.jsonl（append-only history）＋ state.json 現值。
+// state.json＝「現在怎樣」；events.jsonl＝「曾經發生什麼」。兩者不混。
 function laneMetaText(l){
   const L=[];
-  L.push(`lane ${l.name} 建立 · branch=${l.branch} base=${l.base}`);
+  L.push(`── state.json（current runtime state）──`);
+  L.push(`state=${l.state}${l.resume_state?` resume_state=${l.resume_state}`:""}`);
+  L.push(`branch=${l.branch} base_sha=${l.base_sha} merge=${l.merge} rework_count=${l.rework_count??0}`);
   (l.inflight||[]).forEach(p=>{
-    L.push(`start role=${p.role} task=${p.task} model=${p.model}`);
-    if(p.fb) L.push(`PROVIDER_FALLBACK role=${p.role} task=${p.task} got=${p.model}（額度用盡）`);
-    if(p.role==="worker"&&p.rework>0) L.push(`rework ${p.task} #${p.rework}/${l.comp.rework}`);
-    if(p.stall) L.push(`STALL role=${p.role} task=${p.task}（age ${p.age}m 未更新）`);
+    L.push(`${p.role} ${p.task} status=${p.stall?"STALL":p.status}${p.session_ref?` session_ref=${p.session_ref}`:""}`);
+    if(p.fb) L.push(`resolved_model=${p.model}（fallback；config 不變）`);
   });
-  if(l.paused) L.push(`PAUSED lane=${l.name}（使用者暫停派新 task）`);
-  if(l.merge==="merged") L.push(`MERGED_TO_MAIN lane=${l.name} ${l.base}`);
-  else if(l.merge==="ready") L.push(`READY_TO_MERGE lane=${l.name}（Gate PASS，待 merge）`);
+  L.push("");
+  L.push(`── events.jsonl（append-only history）──`);
+  (l.events||[]).forEach(ev=>{
+    const extra=Object.keys(ev).filter(k=>k!=="time"&&k!=="event").map(k=>` ${k}=${ev[k]}`).join("");
+    L.push(`${ev.time} ${ev.event}${extra}`);
+  });
   return L.join("\n");
 }
 function tabLogs(l){
@@ -1280,7 +1532,7 @@ function tabLogs(l){
       +`<pre class="log grow" style="margin:0;min-height:180px">${logHTML(laneLogText(l))}</pre>`
     +`</div>`
     +`<div class="col">`
-      +`<div class="tlabel">事件流 <span class="muted" style="text-transform:none;letter-spacing:0">run.meta tail（含 PROVIDER_FALLBACK）· 本 lane</span></div>`
+      +`<div class="tlabel">事件流 <span class="muted" style="text-transform:none;letter-spacing:0">state.json 現值 ＋ events.jsonl（append-only，含 PROVIDER_FALLBACK）· 本 lane</span></div>`
       +`<div class="meta-stream grow" style="margin:0;min-height:180px">${logHTML(laneMetaText(l))}</div>`
     +`</div>`
   +`</div>`;
@@ -1311,7 +1563,7 @@ function agentOne(p,l){
     +`<div class="a-sub">`
       +`<span class="mdl ${p.fb?"fb":""}">${p.fb?"↘ ":""}${esc(p.model)}${p.fb?"（fallback）":""}</span>`
       +`<span>age ${p.age}m</span>`
-      +(p.role==="worker"?`<span class="rw">rework <b>${p.rework}</b>/${l.comp.rework}</span>`:``)
+      +(p.role==="worker"?`<span class="rw">rework <b>${p.rework}</b>/${resolveRework(l)}</span>`:``)
     +`</div>`
     +`<div class="a-act">↳ ${esc(p.act||"")}</div>`
   +`</div>`;
@@ -1323,6 +1575,9 @@ function setGate(id,val){
 }
 
 function setBackend(on){STATE.live=on;$("#be-dot").className="dot "+(on?"on":"off");$("#be-state").textContent="backend: "+(on?"● 連線":"○ 靜態預覽");}
+// API contract（GET /api/status）：lanes[] 每筆至少 { name, project, state }；
+// state＝canonical workflow state（orchestrator 更新的 SSoT）；PAUSED/BLOCKED/FAILED 附 resume_state。
+// GUI 收到直接 render；merge/gates/inflight 等只是 evidence，不得用來推測 state。
 async function poll(){
   try{const r=await fetch(API+"/api/status");if(!r.ok)throw 0;STATE.data=await r.json();setBackend(true);}
   catch(e){setBackend(false);}
@@ -1349,10 +1604,10 @@ async function handleAct(a){
   if(a==="new"){
     const proj=($("#n-project").value||"").trim();
     const name=($("#n-name").value||"").trim();
-    const wd=$("#n-workdir").value.trim();
+    if(!proj){toast("請先選 Project");return;}
     if(!name){toast("請先填 lane Name");return;}
-    if(wd){localStorage.setItem("orch_workdir_"+name,wd);toast(`已儲存工作目錄 ${name} → ${wd}（靜態預覽：存 localStorage；真實會寫進 .piforge/lanes/<lane>/lane.yaml）`);}
-    await post("/api/lanes",{act:"new",name,project:proj,workdir:wd,items:$("#n-items").value,files:$("#n-files").value,comp:NEWCOMP});
+    // lane 不含 workdir / repo_root；repo root 由 Project（.piforge/project.yaml）提供
+    await post("/api/lanes",{act:"new",project:proj,name,items:$("#n-items").value,files:$("#n-files").value,comp:NEWCOMP});
     return;
   }
   const map={worker:`/api/lanes/${lane}/dispatch`,reviewer:`/api/lanes/${lane}/dispatch`,
@@ -1364,22 +1619,28 @@ async function handleAct(a){
 // 全域事件委派（中欄分頁 / 左欄清單 / pipeline 都是動態渲染）
 document.addEventListener("click",e=>{
   const t=e.target;
+  const pn=t.closest("[data-proj-new]"); if(pn){openNL(pn.dataset.projNew);return;}
+  const ps=t.closest("[data-proj-settings]"); if(ps){openProjSettings(ps.dataset.projSettings);return;}
   const pt=t.closest("[data-proj-toggle]"); if(pt){const p=pt.dataset.projToggle;
     if(collapsedProjects.has(p))collapsedProjects.delete(p);else collapsedProjects.add(p);renderLaneList(STATE.data);return;}
   const li=t.closest("[data-lane]"); if(li){STATE.selLane=li.dataset.lane;ldTab="dispatch";render();return;}
   const ph=t.closest("[data-phase]"); if(ph){ldTab=ph.dataset.phase;renderCenter();return;}
   const tb=t.closest("[data-ldtab]"); if(tb){ldTab=tb.dataset.ldtab;renderCenter();return;}
   const pu=t.closest("[data-pause]"); if(pu){const l=STATE.data.lanes.find(x=>x.name===pu.dataset.pause);
-    if(l){l.paused=!l.paused;toast(`lane ${l.name} → ${l.paused?"PAUSE（暫停派新 task）":"RESUME"}（靜態預覽）`);render();}return;}
-  const wd=t.closest("[data-wdir]"); if(wd){const l=STATE.data.lanes.find(x=>x.name===wd.dataset.wdir);
-    if(l){const nv=prompt("工作目錄（RobotProject 根；找 / 存檔案都限在這裡）",l.workdir||"");
-      if(nv!==null){l.workdir=nv.trim();if(l.workdir)localStorage.setItem("orch_workdir_"+l.name,l.workdir);else localStorage.removeItem("orch_workdir_"+l.name);
-        toast(`lane ${l.name} 工作目錄 → ${l.workdir||"（未設）"}（靜態預覽：已存 localStorage）`);render();}}return;}
+    if(l){
+      if(l.state==="PAUSED"){const rs=LANE_STATES.includes(l.resume_state)?l.resume_state:"IMPLEMENT";l.state=rs;delete l.resume_state;
+        toast(`lane ${l.name} → RESUME（state 回到 ${rs}）（靜態預覽）`);}
+      else{l.resume_state=l.state;l.state="PAUSED";
+        toast(`lane ${l.name} → PAUSED（resume_state=${l.resume_state}，暫停派新 task）（靜態預覽）`);}
+      render();}return;}
   const cs=t.closest(".stepper[data-comp] button");
   if(cs){const st=cs.closest(".stepper[data-comp]");const l=STATE.data.lanes.find(x=>x.name===st.dataset.comp);
     if(l){const key=st.dataset.key,lo=+st.dataset.lo,hi=+st.dataset.hi,d=+cs.dataset.d;
-      let cur=(l.comp[key]??0)+d;cur=Math.max(lo,Math.min(hi,cur));l.comp[key]=cur;
-      toast(`lane ${l.name} ${key} → ${cur}（只影響之後dispatch，靜態預覽）`);render();}return;}
+      const isRework=key==="rework_max", base=isRework?resolveRework(l):resolveComp(l,key);
+      let cur=Math.max(lo,Math.min(hi,base+d));
+      if(isRework){if(!l.policy)l.policy={};l.policy.rework_max=cur;}
+      else{if(!l.composition)l.composition={};l.composition[key]=cur;}
+      toast(`lane ${l.name} ${key} → ${cur}（lane override；inherit 值為 ${base}）（靜態預覽）`);render();}return;}
   if(t.closest("#empty-newlane")||t.closest("#empty-newlane-rm")){openNL();return;}
   const cft=t.closest("[data-cfgtab]"); if(cft){cfgTab=cft.dataset.cfgtab;renderCfgTab();return;}
   const sc=t.closest("[data-setup-check]"); if(sc){toast(`重新檢查 ${CLOUD[sc.dataset.setupCheck].label}（靜態預覽：真實會跑 pi auth check / vLLM ping）`);return;}
@@ -1396,16 +1657,27 @@ document.addEventListener("click",e=>{
 document.addEventListener("change",e=>{
   const t=e.target;
   if(t.dataset.stop){const l=STATE.data.lanes.find(x=>x.name===t.dataset.stop);
-    if(l){l.stopAt=t.value;toast(t.value?`lane ${l.name} 排程 ${t.value} 停dispatch（in-flight 做完，靜態預覽）`:`lane ${l.name} 取消排程停止`);render();}}
+    if(l){if(!l.schedule)l.schedule={};l.schedule.stop_dispatch_at=t.value;
+      toast(t.value?`lane ${l.name} 排程 ${t.value} 停dispatch（lane override，in-flight 做完，靜態預覽）`:`lane ${l.name} 取消排程停止（inherit System）`);render();}}
+  const lr=t.closest?t.closest("[data-lmradio]"):null;
+  if(lr){const l=STATE.data.lanes.find(x=>x.name===lr.dataset.lmlane);
+    if(l){const role=lr.dataset.lmradio; if(!l.model_overrides)l.model_overrides={};
+      if(lr.value==="override"){
+        if(!l.model_overrides[role]){const res=resolveChain(role,l);l.model_overrides[role]={v:res.val.v,m:res.val.m,e:res.val.e};}
+        saveLaneModels(l);toast(`lane ${l.name} ${role} → Override（從此自己決定，不再跟 ${lmFromLabel(lr.dataset.lmfrom||"system")} default）`);}
+      else{l.model_overrides[role]=null;saveLaneModels(l);toast(`lane ${l.name} ${role} → Inherit（null；不保存解析值，上層變更自動跟新）`);}
+      render();}
+    return;}
   const lm=t.closest?t.closest("[data-lm]"):null;
   if(lm){const row=lm.closest(".lm-row");const l=STATE.data.lanes.find(x=>x.name===row.dataset.lmlane);
-    if(l){const role=row.dataset.lmrole;ensureLaneModels(l);
-      const vSel=row.querySelector('[data-lm="v"]'),mSel=row.querySelector('[data-lm="m"]'),eSel=row.querySelector('[data-lm="e"]');
-      if(lm.dataset.lm==="v"){l.models[role].v=vSel.value;l.models[role].m=(MODELS[vSel.value]||[])[0];
-        mSel.innerHTML=(MODELS[vSel.value]||[]).map(m=>`<option ${m===l.models[role].m?"selected":""}>${esc(m)}</option>`).join("");}
-      else if(lm.dataset.lm==="m"){l.models[role].m=mSel.value;}
-      else if(lm.dataset.lm==="e"){l.models[role].e=eSel.value;}
-      saveLaneModels(l);toast(`lane ${l.name} ${role} 模型 → ${l.models[role].v}/${l.models[role].m}（${l.models[role].e}）`);}
+    if(l){const role=row.dataset.lmrole;
+      const ov=l.model_overrides&&l.model_overrides[role]; if(!ov)return; // select 只在 Override 時渲染
+      const vSel=row.querySelector('[data-lm="v"]'),mSel=row.querySelector('[data-lm="m"]');
+      if(lm.dataset.lm==="v"){ov.v=vSel.value;ov.m=(MODELS[vSel.value]||[])[0];
+        mSel.innerHTML=(MODELS[vSel.value]||[]).map(m=>`<option ${m===ov.m?"selected":""}>${esc(m)}</option>`).join("");}
+      else if(lm.dataset.lm==="m"){ov.m=mSel.value;}
+      else if(lm.dataset.lm==="e"){ov.e=e.target.value;}
+      saveLaneModels(l);toast(`lane ${l.name} ${role} Override → ${ov.v}/${ov.m}（${ov.e}）`);}
     return;}
 });
 document.addEventListener("input",e=>{
@@ -1413,31 +1685,94 @@ document.addEventListener("input",e=>{
   if(e.target.id==="f-prompt")dispatchState.prompt=e.target.value;
 });
 
-// lane 組成 stepper（New Lane modal 內）
-$$(".stepper").forEach(s=>s.querySelectorAll("button").forEach(btn=>btn.onclick=()=>{
-  const key=s.dataset.step, d=+btn.dataset.d; let cur=NEWCOMP[key]+d;
+// lane 組成 stepper（New Lane modal 內；null＝inherit，按 ± 才寫 override）
+function newCompVal(key){
+  if(NEWCOMP[key]!=null)return NEWCOMP[key];
+  const pd=PROJECTS[nlProject]&&PROJECTS[nlProject].defaults?PROJECTS[nlProject].defaults[key]:null;
+  if(pd!=null)return pd;
+  return SYSTEM.defaults[key==="rework_max"?"rework":key];
+}
+function renderNewComp(){
+  [["workers","workers"],["reviewers","reviewers"],["final","final"],["rework_max","rework"]].forEach(([key,id])=>{
+    const v=$("#c-"+id); if(v)v.textContent=newCompVal(key);
+    const ch=$("#ch-"+id);
+    if(ch){const inh=NEWCOMP[key]==null;ch.textContent=inh?"inherit":"override";ch.className="chip "+(inh?"ready":"prem");}
+  });
+  const w=$("#final-warn"); if(w)w.classList.toggle("show",NEWCOMP.final===0);
+}
+$$(".stepper[data-step]").forEach(s=>s.querySelectorAll("button").forEach(btn=>btn.onclick=()=>{
+  const raw=s.dataset.step, key=raw==="rework"?"rework_max":raw, d=+btn.dataset.d;
+  let cur=newCompVal(key)+d;
   if(key==="final")cur=Math.max(0,Math.min(1,cur));
-  else if(key==="rework")cur=Math.max(0,Math.min(20,cur));
+  else if(key==="rework_max")cur=Math.max(0,Math.min(20,cur));
   else cur=Math.max(key==="workers"?1:0,Math.min(3,cur));
-  NEWCOMP[key]=cur; $("#c-"+key).textContent=cur;
-  $("#final-warn").classList.toggle("show",NEWCOMP.final===0);
+  NEWCOMP[key]=cur; renderNewComp();
 }));
 
-// New Lane modal
-function openNL(){$("#nl-modal").classList.add("show");showTab("cmd");}
-$("#btn-newlane").onclick=openNL;
+// New Lane modal（頂層＝選 Project；從專案「＋」進來＝read-only context；兩者都不問 workdir）
+function renderNLProjectOptions(){
+  const sel=$("#n-project");
+  sel.innerHTML=Object.values(PROJECTS).map(p=>`<option value="${esc(p.id)}" ${p.id===nlProject?"selected":""}>${esc(p.name)}（${esc(p.repo_root||"（未設 repo_root）")}）</option>`).join("");
+  sel.disabled=!!nlProject;
+}
+function openNL(projId){
+  nlProject=projId||null;
+  renderNLProjectOptions();
+  renderNewComp();
+  $("#nl-modal").classList.add("show");showTab("cmd");
+}
+$("#btn-newlane").onclick=()=>openNL(null);
 $("#nl-close").onclick=()=>$("#nl-modal").classList.remove("show");
 $("#nl-modal").onclick=e=>{if(e.target.id==="nl-modal")$("#nl-modal").classList.remove("show");};
-// 工作目錄：選資料夾（File System Access API；不支援就手動貼路徑）
-$("#n-workdir-pick").onclick=async()=>{
-  if(!window.showDirectoryPicker){toast("此瀏覽器不支援選資料夾，請直接貼上目錄路徑");return;}
-  try{
-    const h=await window.showDirectoryPicker();
-    $("#n-workdir-chip").innerHTML=`<span class="chip ready">已選 📁 ${esc(h.name)}</span>`;
-    if(!$("#n-workdir").value.trim())$("#n-workdir").value="（已選資料夾 "+h.name+"，請補上完整路徑）";
-    toast("已選工作目錄 "+h.name+"（記得在輸入欄補上完整路徑再儲存）");
-  }catch(e){/* 使用者取消 */}
+$("#n-project").onchange=()=>{nlProject=$("#n-project").value;renderNewComp();};
+
+// Project Settings modal（⚙；寫 .piforge/project.yaml 的欄位）
+let psProject=null;
+function openProjSettings(projId){
+  const p=PROJECTS[projId]; if(!p)return;
+  psProject=projId;
+  $("#ps-id").textContent="（"+projId+"）";
+  $("#ps-name").value=p.name;
+  $("#ps-repo").value=p.repo_root||"";
+  $("#ps-branch").value=p.default_branch||"";
+  $("#ps-build").value=(p.validation&&p.validation.build)||"";
+  $("#ps-tests").value=(p.validation&&p.validation.tests)||"";
+  $("#ps-autotest").value=(p.validation&&p.validation.autotest)||"";
+  $("#ps-assets").value=(p.runtime_assets||[]).join("\n");
+  $("#ps-protected").value=(p.protected_paths||[]).join("\n");
+  const dl=p.defaults||{}, sv=(v)=>v==null?"":String(v);
+  $("#ps-maxlanes").value=sv(dl.max_lanes);
+  $("#ps-workers").value=sv(dl.workers);
+  $("#ps-reviewers").value=sv(dl.reviewers);
+  $("#ps-rework").value=sv(dl.rework_max);
+  $("#ps-modal").classList.add("show");
+}
+$("#ps-close").onclick=()=>$("#ps-modal").classList.remove("show");
+$("#ps-modal").onclick=e=>{if(e.target.id==="ps-modal")$("#ps-modal").classList.remove("show");};
+$("#ps-save").onclick=()=>{
+  const p=PROJECTS[psProject]; if(!p)return;
+  p.name=$("#ps-name").value.trim()||p.name;
+  p.repo_root=$("#ps-repo").value.trim();
+  p.default_branch=$("#ps-branch").value.trim()||"main";
+  p.validation={build:$("#ps-build").value.trim(),tests:$("#ps-tests").value.trim(),autotest:$("#ps-autotest").value.trim()};
+  const lines=s=>s.split("\n").map(x=>x.trim()).filter(Boolean);
+  p.runtime_assets=lines($("#ps-assets").value);
+  p.protected_paths=lines($("#ps-protected").value);
+  const num=s=>s==null||s===""?null:parseInt(s,10);
+  p.defaults={max_lanes:num($("#ps-maxlanes").value),workers:num($("#ps-workers").value),
+    reviewers:num($("#ps-reviewers").value),rework_max:num($("#ps-rework").value)};
+  $("#ps-modal").classList.remove("show");
+  renderLaneList(STATE.data);
+  toast(`Project ${p.name} 設定已更新（靜態預覽：真實會寫 .piforge/project.yaml；inherit 的 lane 自動跟新）`);
 };
+
+// System Defaults（設定頁 Monitor；讀自 SYSTEM，靜態預覽只讀）
+function renderSysDefaults(){
+  const set=(id,val)=>{const el=$("#"+id);if(el)el.textContent=val;};
+  set("sys-w",SYSTEM.defaults.workers);set("sys-r",SYSTEM.defaults.reviewers);
+  set("sys-f",SYSTEM.defaults.final);set("sys-rework",SYSTEM.defaults.rework);
+  set("sys-pi",SYSTEM.concurrency.pi_cap);set("sys-stall",SYSTEM.monitor.stall_min);
+}
 
 // Backlog 分配（頁籤二）
 let blFilter="all";
@@ -1487,7 +1822,7 @@ function checkIndep(){
   else w.textContent=`✓ 獨立性 OK：Final Reviewer 家族「${gf}」與做事的家不同。`;
 }
 $("#chain-add").onclick=()=>{CHAINS[modalRole].push({v:"copilot",m:MODELS.copilot[0],e:"high"});renderChain();};
-$("#chain-save").onclick=()=>{toast("靜態預覽：會寫入 orch_models.json（未接後端）");renderDispatchPicker();};
+$("#chain-save").onclick=()=>{toast("靜態預覽：會寫入 System Settings ~/.piforge/config.yaml（未接後端）");renderDispatchPicker();};
 
 // Monitor 間隔（設定頁）
 function startPoll(){ if(pollTimer)clearInterval(pollTimer); pollTimer=setInterval(poll,POLL_MS); }
@@ -1504,12 +1839,11 @@ $("#quit-time").onchange=e=>{
 $("#banner-x").onclick=()=>$("#preview-banner").style.display="none";
 
 // 啟動
-// 載入已儲存的工作目錄與角色模型（真實環境＝lane.conf；此處靜態預覽用 localStorage 保留）
+// 載入已儲存的 lane model overrides（真實環境＝lane.yaml 的 model_overrides；此處靜態預覽用 localStorage 保留）
 (STATE.data.lanes||[]).forEach(l=>{
-  const s=localStorage.getItem("orch_workdir_"+l.name); if(s)l.workdir=s;
-  const m=localStorage.getItem("orch_models_"+l.name); if(m){try{l.models=JSON.parse(m);}catch(e){}}
+  const m=localStorage.getItem("orch_models_"+l.name); if(m){try{l.model_overrides=JSON.parse(m);}catch(e){}}
 });
-renderCloud(); renderSetup(); renderLocalCfg(); renderRoles(); renderDispatchPicker(); renderRoleTabs(); renderChain(); renderCfgTab(); render();
+renderCloud(); renderSetup(); renderLocalCfg(); renderRoles(); renderDispatchPicker(); renderRoleTabs(); renderChain(); renderCfgTab(); renderSysDefaults(); render();
 poll(); startPoll();
 </script>
 </body>
