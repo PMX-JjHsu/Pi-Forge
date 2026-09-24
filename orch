@@ -1,0 +1,32 @@
+#!/bin/zsh
+# shells/orch/orch — 多 agent 開發 lane 的操作入口。
+#
+#   orch new    <lane> [--items "..."] [--files "..."]   開一條新 lane（含 12 項前置檢查）
+#   orch status [lane] [--all]                           看狀態（預設所有 active lane）
+#   orch verify <lane> [--with-main] [--ref <ref>]       Gate #2 獨立驗證（派 pi 跑）
+#   orch merge  <lane> [--dry-run] [--no-push]           合進 main + push（含合併後驗證）
+#   orch watch  [--interval 60] [--once]                 背景監看，有事發 macOS 通知（Gate #2 無法自我喚醒）
+#   orch dispatch <run> worker|reviewer <ID> <prompt>    派一個 pi（通常由 orchestrator 呼叫）
+#
+# 規格來源：pi-multi-agent-orchestration-v2.md（§29 實戰修訂、§31 控制方法、§32 監看與回報）
+set -u
+SELF=${0:A:h}
+
+cmd="${1:-}"; shift 2>/dev/null
+
+case "$cmd" in
+  new)      exec "$SELF/new.sh" "$@" ;;
+  status|st) exec "$SELF/status.sh" "$@" ;;
+  verify)   exec "$SELF/verify.sh" "$@" ;;
+  merge)    exec "$SELF/merge.sh" "$@" ;;
+  watch)    exec "$SELF/watch.sh" "$@" ;;
+  dispatch) exec "$SELF/dispatch.sh" "$@" ;;
+  ""|-h|--help|help)
+    sed -n '3,12p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+  *)
+    print -u2 "不認得的指令: $cmd"
+    print -u2 "可用: new / status / verify / merge / dispatch（orch --help 看用法）"
+    exit 2
+    ;;
+esac

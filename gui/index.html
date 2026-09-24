@@ -1,0 +1,1516 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CR ORCH 指揮中心</title>
+<style>
+  :root{
+    --bg:#eef1f5; --panel:#ffffff; --panel2:#f3f5f8; --line:#d7dde5;
+    --fg:#26313b; --dim:#7c8a98;
+    /* 三色狀態：綠=正常/完成 · 黃=需查看(不阻塞) · 紅=需處理 */
+    --ok:#1f9d63; --ok-soft:#e2f3ea;
+    --info:#c98a0e; --info-soft:#fbf1da;
+    --action:#d24a4a; --action-soft:#fbe7e7;
+    --accent:var(--ok); --accent-soft:var(--ok-soft);
+    --warn:var(--info); --warn-soft:var(--info-soft);
+    --bad:#d24a4a; --bad-soft:#fbe7e7;
+    --blue:#2f7fc4; --blue-soft:#e5eff8; --purple:#7a52c8; --purple-soft:#efe9fa;
+    --code:#f6f8fa; --code-line:#e2e8ef;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--fg);font:13px/1.5 var(--mono);-webkit-font-smoothing:antialiased}
+  a{color:var(--blue)}
+  .wrap{display:flex;flex-direction:column;height:100vh;gap:8px;padding:8px;min-height:0}
+  .preview-banner{background:var(--warn-soft);border:1px solid #e6c98a;
+        border-radius:6px;padding:6px 12px;color:#8a5f10;font-size:12px;display:flex;gap:10px;align-items:center}
+  .preview-banner b{color:#7a5308}
+  .preview-banner .x{cursor:pointer;color:var(--dim);margin-left:auto;font-size:14px}
+  .preview-banner .x:hover{color:var(--bad)}
+  .bar{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 12px;
+        display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .bar h1{font-size:13px;margin:0;font-weight:700;letter-spacing:.5px}
+  /* 頁籤導覽 */
+  .nav{display:flex;gap:4px}
+  .navbtn{background:transparent;border:1px solid transparent;color:var(--dim);
+        border-radius:5px;padding:5px 12px;font:12px var(--mono);cursor:pointer}
+  .navbtn:hover{color:var(--fg);border-color:var(--line)}
+  .navbtn.sel{background:var(--panel2);border-color:var(--accent);color:var(--fg);font-weight:700}
+  .stat{color:var(--dim);white-space:nowrap} .stat b{color:var(--fg);font-weight:600}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .dot.on{background:var(--ok)} .dot.off{background:var(--dim)} .dot.warn{background:var(--info)} .dot.bad{background:var(--action)}
+  .spacer{flex:1}
+  .btn{background:var(--panel);border:1px solid var(--line);color:var(--fg);
+        border-radius:5px;padding:5px 10px;font:12px var(--mono);cursor:pointer}
+  .btn:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700}
+  .btn.primary:hover{background:#188553}
+  .btn.danger:hover{border-color:var(--bad);color:var(--bad);background:var(--bad-soft)}
+  .btn.sm{padding:3px 7px;font-size:11px}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  /* Pi Cloud 串聯狀態（設定頁）*/
+  .cloud{display:flex;flex-direction:column;gap:6px}
+  .cloudrow{display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:6px;
+        padding:7px 10px;font-size:11px;cursor:pointer;background:var(--panel2);user-select:none}
+  .cloudrow:hover{border-color:var(--blue)}
+  .cloudrow.off{opacity:.55}
+  .cr-main{flex:1;min-width:0}
+  .cr-main b{font-size:11px}
+  .cr-svc{font-size:10px;color:var(--dim)}
+  .cr-status{font-size:10px;font-weight:700;white-space:nowrap}
+  .cr-status.ok{color:var(--ok)} .cr-status.action{color:var(--action)} .cr-status.off{color:var(--dim)}
+  .cloudrow .sw{font-size:9px;padding:0 6px;border-radius:8px;background:var(--ok-soft);color:var(--ok);font-weight:700}
+  .cloudrow.off .sw{background:var(--line);color:var(--dim)}
+  /* 設定頁：分頁籤（連線 Setup / 模型設定 / Monitor / 角色全景）*/
+  .cfgbody{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:10px 0 8px}
+  .cfg-sec{display:flex;flex-direction:column;gap:8px}
+  /* 連線 Setup：provider 明細卡 + 安裝/設定指令 + Local LLM 設定 */
+  .setup-banner{font-size:11px;border-radius:5px;padding:7px 10px;margin-bottom:2px;border:1px solid}
+  .setup-banner.warn{background:var(--info-soft);border-color:#ecd6a0;color:#8a5f10}
+  .setup-banner.ok{background:var(--ok-soft);border-color:#b7e2cd;color:var(--ok)}
+  .setup-list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+  .setup-card{border:1px solid var(--line);border-left:3px solid var(--line);border-radius:5px;padding:9px 11px;background:var(--panel2)}
+  .setup-card.ok{border-left-color:var(--ok)} .setup-card.warn{border-left-color:var(--info)} .setup-card.bad{border-left-color:var(--action)}
+  .setup-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .setup-head .nm{font-weight:700;font-size:12px}
+  .setup-steps{margin:7px 0 0 2px;padding-left:18px;font-size:11px;color:var(--fg)}
+  .setup-steps li{margin:2px 0}
+  .cmdbox{display:flex;align-items:center;gap:6px;background:var(--code);border:1px solid var(--code-line);border-radius:4px;padding:5px 8px;margin-top:7px}
+  .cmdbox code{flex:1;font:11px var(--mono);color:#3a4550;white-space:pre-wrap;word-break:break-all}
+  .localform label{margin-top:8px}
+  .llm-light{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700}
+  /* 角色全景（設定頁）*/
+  .roles{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .role{border:1px solid var(--line);border-radius:20px;padding:3px 10px;font-size:11px;background:var(--panel2);
+        display:flex;gap:6px;align-items:center;cursor:pointer;white-space:nowrap}
+  .role:hover{border-color:var(--blue)}
+  .role .n{color:var(--dim)} .role.gap{border-style:dashed;border-color:#d8b25f;color:var(--warn)}
+  .role .m{color:var(--blue);font-size:10px}
+  .arrow{color:var(--dim);font-size:11px}
+  /* 頁籤面板 */
+  .panels{flex:1;min-height:0;display:flex;flex-direction:column}
+  .tab-panel{display:none;flex:1;min-height:0;flex-direction:column;overflow:auto}
+  .tab-panel.show{display:flex}
+  /* 指揮中心：左 lane 清單 / 中 分頁詳細 */
+  .grid{display:grid;grid-template-columns:230px 1fr;gap:8px;flex:1;min-height:0}
+  /* lane 詳細的分頁（每個 phase 一頁＋總覽/dispatch）*/
+  .ldtabs{display:flex;gap:4px;flex-wrap:wrap;margin:10px 0 0;border-bottom:1px solid var(--line)}
+  .ldtab{border:1px solid var(--line);border-bottom:none;border-radius:6px 6px 0 0;padding:5px 11px;font-size:11px;
+        cursor:pointer;background:var(--panel2);color:var(--dim);position:relative;top:1px}
+  .ldtab:hover{color:var(--fg)}
+  .ldtab.sel{background:var(--panel);border-color:var(--accent);border-bottom:1px solid var(--panel);color:var(--accent);font-weight:700}
+  .ldtab .cur{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--warn);margin-left:5px;vertical-align:middle}
+  .ldpanel{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px;background:var(--panel);
+        border:1px solid var(--line);border-top:none;border-radius:0 0 6px 6px;padding:10px 12px}
+  /* dispatch頁：上（送出）/ 下（接收 pi 輸出）*/
+  .split{display:flex;flex-direction:column;gap:10px;flex:1;min-height:0}
+  .split-top{flex:none}
+  .split-bottom{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px}
+  .pi-stream{flex:1;min-height:120px;overflow:auto;background:var(--code);border:1px solid var(--code-line);
+        border-radius:5px;padding:8px;font:11px/1.5 var(--mono);color:#4a5560;margin:0;white-space:pre-wrap;word-break:break-word}
+  .tlabel{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin:0 0 6px;display:flex;justify-content:space-between;gap:8px}
+  .phase{cursor:pointer}
+  .phase:hover .plbl{color:var(--blue)}
+  .col{display:flex;flex-direction:column;gap:8px;min-height:0;overflow:auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;
+        box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .card h2{font-size:11px;margin:0 0 8px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;
+        display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .grow{flex:1;min-height:0}
+  .flex-none{flex:none}
+  /* 設定頁兩欄 */
+  .grid-cfg{display:grid;grid-template-columns:380px 1fr;gap:8px;flex:1;min-height:0}
+  /* log 頁兩欄 */
+  .grid-logs{display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:1;min-height:0}
+  /* 左：專案 → lane 樹狀清單（只留 name + phase status）*/
+  .proj{margin-bottom:2px}
+  .proj-head{display:flex;align-items:center;gap:6px;padding:5px 4px;font-size:11px;font-weight:700;color:var(--dim);
+         cursor:pointer;user-select:none;border-radius:4px}
+  .proj-head:hover{color:var(--fg);background:var(--panel2)}
+  .proj-head .caret{font-size:9px;width:10px;display:inline-block}
+  .proj-head .proj-count{margin-left:auto;font-size:10px;font-weight:400;color:var(--dim);background:var(--panel2);
+         border:1px solid var(--line);border-radius:8px;padding:0 6px}
+  .proj-body{display:flex;flex-direction:column;margin-left:9px;padding-left:9px;border-left:1px solid var(--line)}
+  .lane-item{border:1px solid var(--line);border-radius:6px;padding:8px;margin-bottom:6px;cursor:pointer;background:var(--panel)}
+  .lane-item:hover{border-color:var(--blue)}
+  .lane-item.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+  .li-top{display:flex;justify-content:space-between;align-items:center;gap:6px}
+  .li-top .name{font-weight:700;font-size:12px}
+  .mini{display:flex;gap:2px;margin:6px 0 3px}
+  .mini .seg{flex:1;height:4px;border-radius:2px;background:var(--line)}
+  .mini .seg.on{background:var(--accent)}
+  .mini .seg.act{background:var(--accent);opacity:.4;box-shadow:0 0 0 1px var(--accent)}
+  .li-ph{font-size:10px;color:var(--dim)}
+  .lane-item.sel .li-ph{color:var(--accent);font-weight:700}
+  /* merge 狀態 badge */
+  .mb{font-size:10px;font-weight:700;border-radius:4px;padding:2px 7px;white-space:nowrap}
+  .mb.merged{background:var(--ok-soft);color:var(--ok);border:1px solid #b7e2cd}
+  .mb.ready{background:var(--info-soft);color:var(--info);border:1px solid #ecd6a0}
+  .mb.merging{background:var(--info-soft);color:var(--info);border:1px solid #ecd6a0}
+  .mb.open{background:var(--ok-soft);color:var(--ok);border:1px solid #b7e2cd}
+  .pi{font-size:11px;margin-top:5px}
+  .tag{display:inline-block;border-radius:3px;padding:0 5px;font-size:10px;margin-right:4px}
+  .tag.worker{background:var(--accent-soft);color:var(--accent)} .tag.reviewer{background:var(--blue-soft);color:var(--blue)}
+  .tag.finalgate{background:var(--purple-soft);color:var(--purple)}
+  .stall{color:var(--warn)} .ok{color:var(--accent)} .no{color:var(--bad)}
+  .rw{font-size:10px;color:var(--dim)} .rw b{color:var(--warn)}
+  .dhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px}
+  .dhead .name{font-size:15px;font-weight:700}
+  #lane-detail{display:flex;flex-direction:column}
+  .wdirrow{display:flex;align-items:center;gap:8px;margin-top:5px;min-width:0}
+  .wdir{font-size:11px;color:var(--blue);background:var(--blue-soft);border:1px solid #bcd9ef;
+        border-radius:5px;padding:2px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+  /* 物流式 pipeline（5 phase，中欄詳細用）*/
+  .pipeline{--first:7.14%;--span:85.71%;--fill:0%;position:relative;display:flex;margin:24px 2px 6px}
+  .segtime{position:absolute;top:9px;transform:translate(-50%,-140%);font-size:9px;color:var(--dim);
+        background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:0 3px;z-index:2;white-space:nowrap;line-height:14px}
+  .pipeline::before{content:"";position:absolute;left:var(--first);width:var(--span);top:8px;height:2px;background:var(--line);z-index:0}
+  .pipeline::after{content:"";position:absolute;left:var(--first);top:8px;height:2px;width:var(--fill);background:var(--accent);z-index:0;transition:width .3s}
+  .phase{flex:1;position:relative;z-index:1;display:flex;flex-direction:column;align-items:center}
+  .dotp{width:16px;height:16px;border-radius:50%;background:var(--panel);border:2px solid var(--line);
+        display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--dim)}
+  .plbl{font-size:10px;color:var(--dim);margin-top:4px;white-space:nowrap}
+  .phase.done .dotp{background:var(--accent);border-color:var(--accent);color:#fff}
+  .phase.active .dotp{background:var(--accent);border-color:var(--accent);color:#fff;animation:pulse 1.6s infinite}
+  .phase.todo .dotp{background:var(--panel);border-color:var(--line);color:var(--dim)}
+  .phase.done .plbl,.phase.active .plbl{color:var(--fg);font-weight:700}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 var(--accent-soft)}70%{box-shadow:0 0 0 6px rgba(31,157,99,0)}100%{box-shadow:0 0 0 0 rgba(31,157,99,0)}}
+  /* 角色狀態 */
+  .agent{border:1px solid var(--code-line);border-radius:4px;padding:5px 6px;margin-top:5px;background:var(--code)}
+  .agent .a-top{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+  .agent .a-sub{font-size:10px;color:var(--dim);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
+  .agent .a-act{font-size:10px;color:var(--blue);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sbadge{font-size:9px;font-weight:700;border-radius:3px;padding:1px 5px;white-space:nowrap}
+  .sbadge.run{background:var(--ok-soft);color:var(--ok)}
+  .sbadge.stall{background:var(--info-soft);color:var(--info)}
+  .sbadge.rework{background:var(--info-soft);color:var(--info)}
+  .sbadge.queued{background:var(--info-soft);color:var(--info)}
+  .sbadge.done{background:var(--ok-soft);color:var(--ok)}
+  .sbadge.failed{background:var(--action-soft);color:var(--action)}
+  .mdl{font-size:9px;color:var(--dim)} .mdl.fb{color:var(--warn)}
+  pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px var(--mono);color:#3a4550}
+  label{display:block;font-size:11px;color:var(--dim);margin:8px 0 3px}
+  select,textarea,input{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--fg);
+        border-radius:5px;padding:6px 8px;font:12px var(--mono);resize:vertical}
+  select:focus,textarea:focus,input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+  textarea{min-height:80px}
+  .row{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+  .foot{display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:6px;flex-wrap:wrap}
+  .gate{border-left:3px solid var(--line);padding:6px 8px;margin-bottom:6px;border-radius:3px;background:var(--panel2)}
+  .gate.pass{border-color:var(--ok);background:var(--ok-soft)}
+  .gate.fail{border-color:var(--action);background:var(--action-soft)}
+  .gate.wait{border-color:var(--info);background:var(--info-soft)}
+  .gate .sub{font-size:10px;color:var(--dim)}
+  .meta-stream{height:100%;min-height:150px;overflow:auto;font:11px/1.5 var(--mono);color:#5a6673;
+        background:var(--code);border:1px solid var(--code-line);border-radius:5px;padding:8px}
+  .log{background:var(--code);border:1px solid var(--code-line);border-radius:5px;padding:8px;overflow:auto;
+        font:11px/1.5 var(--mono);color:#5a6673}
+  /* log 字列三色：綠=ok · 黃=需查看(不阻塞) · 紅=需處理 */
+  .log-line{padding:0 3px;border-radius:2px}
+  .log-line.ok{color:var(--ok)}
+  .log-line.info{color:var(--info);background:var(--info-soft)}
+  .log-line.action{color:var(--action);background:var(--action-soft);font-weight:600}
+  /* 三色圖例 */
+  .legend{display:flex;align-items:center;gap:7px;font-size:10px;color:var(--dim);white-space:nowrap}
+  .legend .ldot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:3px;vertical-align:middle}
+  .legend .ldot.ok{background:var(--ok)} .legend .ldot.info{background:var(--info)} .legend .ldot.action{background:var(--action)}
+  .retro-item{border:1px solid var(--line);border-radius:5px;padding:6px 9px;margin-bottom:6px;background:var(--panel2)}
+  .muted{color:var(--dim)} .kv{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin:2px 0}
+  .picker{display:grid;grid-template-columns:1fr 1.4fr .9fr auto;gap:5px;margin-bottom:5px;align-items:center}
+  .picker select{padding:4px 6px;font-size:11px}
+  .picker .del{color:var(--dim);cursor:pointer;padding:0 4px;border:1px solid var(--line);border-radius:4px;background:var(--panel2)}
+  .picker .del:hover{color:var(--bad);border-color:var(--bad)}
+  /* per-lane 角色模型選擇 */
+  .lm-block{margin:6px 0}
+  .lm-label{font-size:10px;color:var(--dim);margin-bottom:2px;font-weight:700}
+  .lm-row{display:grid;grid-template-columns:1fr 1.4fr .9fr;gap:5px}
+  .lm-row select{padding:4px 6px;font-size:11px}
+  .chip{font-size:9px;padding:0 4px;border-radius:3px;margin-left:4px;font-weight:700}
+  .chip.prem{background:var(--info-soft);color:var(--info)} .chip.ready{background:var(--ok-soft);color:var(--ok)}
+  .chip.noready{background:var(--action-soft);color:var(--action)}
+  .fallback-note{font-size:10px;color:var(--dim);margin-top:3px}
+  .indep-warn{font-size:10px;color:var(--action);margin-top:4px;font-weight:600}
+  .stepper{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+  .stepper button{background:var(--panel2);border:none;color:var(--fg);width:26px;height:26px;cursor:pointer;font-size:14px}
+  .stepper button:hover{background:var(--line)}
+  .stepper .val{width:34px;text-align:center;font-size:12px}
+  .comprow{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px}
+  .comprow .f{display:flex;flex-direction:column;gap:3px}
+  .comprow .f span{font-size:10px;color:var(--dim)}
+  .redwarn{background:var(--action-soft);border:1px solid var(--action);color:#9a4a12;margin-top:8px;border-radius:5px;padding:6px 8px;font-size:11px;display:none}
+  .redwarn.show{display:block}
+  /* 空態 */
+  .empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px;gap:8px;min-height:200px}
+  .empty .ic{font-size:34px}
+  .empty .t{font-size:14px;font-weight:700}
+  .empty .d{font-size:11px;color:var(--dim);max-width:320px}
+  .modal-bg{position:fixed;inset:0;background:rgba(30,40,55,.35);display:none;align-items:center;justify-content:center;z-index:50}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:8px;width:min(680px,92vw);
+        max-height:86vh;overflow:auto;padding:16px 18px;box-shadow:0 10px 30px rgba(16,24,40,.18)}
+  .modal h3{margin:0 0 4px;font-size:14px}
+  .modal .desc{color:var(--dim);font-size:11px;margin-bottom:12px}
+  .tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+  .tab{border:1px solid var(--line);border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;background:var(--panel2)}
+  .tab.sel{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);font-weight:700}
+  .close{cursor:pointer;color:var(--dim);font-size:18px}
+  /* backlog 列 */
+  .bl{border:1px solid var(--line);border-radius:5px;margin-bottom:6px;background:var(--panel2);overflow:hidden}
+  .bl .h{display:flex;align-items:center;gap:8px;padding:7px 9px;cursor:pointer;flex-wrap:wrap}
+  .bl .h:hover{background:var(--code)}
+  .bl .id{font-weight:700;font-size:12px} .bl .ti{color:var(--dim);font-size:11px;flex:1;min-width:120px}
+  .bl .where{font-size:10px;color:var(--dim)}
+  .bl .body{display:none;padding:8px 10px;border-top:1px solid var(--line);background:var(--code)}
+  .bl.open .body{display:block}
+  .bl .body .lbl{font-size:10px;color:var(--dim);margin:6px 0 2px} .bl .body pre{font-size:11px}
+  .bl .nt{color:var(--bad)}
+  .blst{font-size:9px;font-weight:700;border-radius:3px;padding:1px 6px;white-space:nowrap}
+  .blst.unassigned{background:var(--panel2);color:var(--dim)} .blst.assigned{background:var(--info-soft);color:var(--info)}
+  .blst.queued{background:var(--info-soft);color:var(--info)} .blst.running{background:var(--ok-soft);color:var(--ok)}
+  .blst.reviewing{background:var(--info-soft);color:var(--info)} .blst.done{background:var(--ok-soft);color:var(--ok)}
+  .blst.merged{background:var(--ok-soft);color:var(--ok);border:1px solid #b7e2cd}
+  #toast{position:fixed;right:12px;bottom:12px;background:var(--panel);border:1px solid var(--line);
+         border-radius:6px;padding:8px 12px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:380px;
+         box-shadow:0 6px 18px rgba(16,24,40,.15)}
+   #toast.show{opacity:1}
+  /* 用量 / Git 頁籤 */
+  .mono{font-family:var(--mono);font-size:11px}
+  .usage-grid{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}
+  .usage-item{display:flex;flex-direction:column;gap:2px;min-width:150px;flex:1;border:1px solid var(--line);border-radius:5px;padding:8px 10px;background:var(--panel2)}
+  .usage-item .u-k{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
+  .usage-item .u-v{font-size:16px;font-weight:700}
+  .fb-item{font-size:11px;color:var(--action);margin:3px 0}
+  .git-tab{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px}
+  .git-tab th,.git-tab td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .git-tab th{color:var(--dim);font-weight:600}
+  .git-tab code{font-family:var(--mono);font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 靜態預覽橫幅 -->
+  <div class="preview-banner" id="preview-banner">
+    <span>🖼</span>
+    <span><b>靜態預覽（未接後端）</b> — 版型與互動可操作，動作只顯示提示、不會真的執行。接上 <code>gui/app.py</code> 後變活。</span>
+    <span class="x" id="banner-x" title="隱藏">✕</span>
+  </div>
+
+  <!-- 頂欄：標題 + 頁籤 + 精簡狀態 -->
+  <div class="bar">
+    <h1>CR ORCH</h1>
+    <nav class="nav">
+      <button class="navbtn sel" data-tab="cmd">Lanes</button>
+      <button class="navbtn" data-tab="git">Git</button>
+      <button class="navbtn" data-tab="usage">用量</button>
+      <button class="navbtn" data-tab="specs">規範</button>
+      <button class="navbtn" data-tab="cfg">設定</button>
+    </nav>
+    <span class="legend" title="綠＝正常/完成 · 黃＝需查看（不阻塞、可進行下一步）· 紅＝需處理">
+      <span><span class="ldot ok"></span>正常</span>
+      <span><span class="ldot info"></span>查看</span>
+      <span><span class="ldot action"></span>處理</span>
+    </span>
+    <span class="spacer"></span>
+    <!-- 頂欄只留：降級 alert（簡報；明細在「用量」頁）＋ backend 連線；main/tokens/copilot/pi 收進 Git / 用量 頁籤 -->
+    <span class="stat" id="fb-ind" style="display:none;color:var(--warn)"><span class="dot warn"></span><span id="fb-txt"></span></span>
+    <span class="stat"><span class="dot off" id="be-dot"></span><span id="be-state">backend: —</span></span>
+  </div>
+
+  <div class="panels">
+
+    <!-- 頁籤一：指揮中心（左 lane 清單 / 中 詳細 / 右 Review+merge）-->
+    <div class="tab-panel show" id="tab-cmd">
+      <div class="grid">
+
+        <!-- 左：專案 → lane 樹狀清單（只 name + phase status）-->
+        <div class="col">
+          <div class="card grow">
+            <h2>專案 / Lanes <button class="btn sm" id="btn-newlane">＋ New</button></h2>
+            <div id="lanes"></div>
+          </div>
+        </div>
+
+        <!-- 中：該 Lane 詳細（分頁：總覽 / 各 phase / Review / Merge / dispatch）-->
+        <div class="col">
+          <div class="card grow" id="lane-detail"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 頁籤：規範（每 phase 一個 MD，可編輯 / 儲存）-->
+    <div class="tab-panel" id="tab-specs">
+      <div class="card grow">
+        <h2>Phase 規範 <span class="muted">（每 phase 一個 MD · 可編輯 / 儲存）</span></h2>
+        <div class="muted" style="font-size:11px;margin-bottom:10px">
+          每個 phase 一份規範 MD（全域，所有 lane 共用）。檔名：<code>shells/orch/specs/&lt;phase&gt;.md</code>。
+          靜態預覽：預載 TBD；「儲存」會 toast（真實接後端才寫檔）。
+        </div>
+        <div id="spec-list"></div>
+      </div>
+    </div>
+
+    <!-- 頁籤：Git（main / 各 lane branch）-->
+    <div class="tab-panel" id="tab-git">
+      <div class="card grow">
+        <h2>Git <span class="muted">main / 各 lane branch</span></h2>
+        <div class="muted" style="font-size:11px;margin-bottom:6px">main HEAD 與各 lane 的 branch / base / 領先 main 的 commit 數 / merge 狀態。來源＝<code>git log main..&lt;branch&gt;</code>（純機械）。</div>
+        <div class="kv"><span>main HEAD</span><span><code id="st-main" class="mono">—</code></span></div>
+        <div id="git-lanes"></div>
+      </div>
+    </div>
+
+    <!-- 頁籤：用量 / 系統（tokens / copilot / pi / 降級）-->
+    <div class="tab-panel" id="tab-usage">
+      <div class="card grow">
+        <h2>用量 / 系統</h2>
+        <div class="muted" style="font-size:11px;margin-bottom:6px">成本與併發用量。<b>tokens</b>＝local vLLM 累計（免費）；<b>copilot</b>＝premium-request 配額（月費固定，用完 fallback）；<b>pi</b>＝目前併發 / 上限。</div>
+        <div class="usage-grid">
+          <div class="usage-item"><span class="u-k">tokens</span><b class="u-v" id="st-tokens">—</b><span class="muted">local vLLM（免費）</span></div>
+          <div class="usage-item"><span class="u-k">copilot</span><b class="u-v" id="st-cop">—</b><span class="muted">premium 配額（用完 fallback）</span></div>
+          <div class="usage-item"><span class="u-k">pi</span><b class="u-v" id="st-pi">—/—</b><span class="muted">併發 / 上限（ORCH_PI_CAP）</span></div>
+        </div>
+        <div class="tlabel" style="margin-top:14px">降級中（PROVIDER_FALLBACK）</div>
+        <div id="fb-list"></div>
+      </div>
+    </div>
+
+    <!-- Log / 事件流 已改為每 lane 的分頁（見「Lanes」頁 → 該 lane 的「Log / 事件流」分頁）-->
+
+    <!-- 頁籤四：設定（分頁籤：連線 Setup / 模型設定 / Monitor / 角色全景）-->
+    <div class="tab-panel" id="tab-cfg">
+      <div class="ldtabs" id="cfg-tabs">
+        <div class="ldtab sel" data-cfgtab="setup">連線 / Setup</div>
+        <div class="ldtab" data-cfgtab="models">模型設定</div>
+        <div class="ldtab" data-cfgtab="monitor">Monitor / 排程</div>
+        <div class="ldtab" data-cfgtab="roles">角色全景</div>
+      </div>
+      <div class="cfgbody">
+
+        <!-- 連線 / Setup：首次使用 wizard（就緒檢查 + 安裝/設定指令 + Local LLM 設定/狀態燈）-->
+        <div class="cfg-sec" id="cfg-sec-setup">
+          <div class="card">
+            <h2>連線 / Setup <span class="muted">· 首次使用</span></h2>
+            <div class="muted" style="font-size:11px;margin-bottom:8px">
+              pi 要串接 Cloud / Local LLM 才派得動工。每家先做<b>就緒檢查</b>（CLI / 金鑰 / vLLM 可達）：
+              <span class="ok">綠＝可dispatch</span> · <span class="stall">黃＝需設定</span> · <span class="no">紅＝未安裝/不可達</span>。
+              沒就緒就照下方<b>安裝 / 設定指令</b>（可複製），設完按「重新檢查」。
+            </div>
+            <div id="setup-banner"></div>
+            <!-- provider 總覽：就緒燈 + on/off（renderCloud 填 #cloud）-->
+            <div class="cloud" id="cloud"></div>
+            <!-- 每 provider 的 Setup 明細（renderSetup 填 #setup-detail）-->
+            <div id="setup-detail" class="setup-list"></div>
+            <!-- Local LLM 設定 + 狀態燈（renderLocalCfg 填 #local-cfg）-->
+            <div id="local-cfg"></div>
+          </div>
+        </div>
+
+        <!-- 模型設定（per-role provider chain）-->
+        <div class="cfg-sec" id="cfg-sec-models" style="display:none">
+          <div class="card">
+            <h2>模型設定 · per-role provider chain</h2>
+            <div class="desc muted" style="font-size:11px;margin-bottom:10px">
+              每個角色一組「廠商 → 模型 → Effort」優先序清單。用完額度自動退下一列（fallback），降級會在頂欄亮燈、事件流留痕。cloud 優先走 Copilot（月費固定）。停用的廠商（連線 Setup 頁 off）不會被選用。
+            </div>
+            <div class="tabs" id="role-tabs"></div>
+            <div id="chain-editor"></div>
+            <div class="row">
+              <button class="btn sm" id="chain-add">＋ 加一列（fallback）</button>
+              <span class="muted" style="font-size:10px" id="chain-hint"></span>
+            </div>
+            <div class="indep-warn" id="indep-warn"></div>
+            <div class="row" style="justify-content:flex-end;margin-top:14px">
+              <button class="btn primary" id="chain-save">儲存到 orch_models.json</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Monitor / 排程 -->
+        <div class="cfg-sec" id="cfg-sec-monitor" style="display:none">
+          <div class="card">
+            <h2>Monitor &amp; 排程</h2>
+            <label>Monitor 間隔（GUI 輪詢頻率；只讀檔案/git/行程，零 token）</label>
+            <select id="poll-int" style="width:auto">
+              <option value="2000">2s</option><option value="4000" selected>4s</option>
+              <option value="8000">8s</option><option value="15000">15s</option>
+              <option value="30000">30s</option><option value="60000">60s</option>
+            </select>
+            <label>🏠 下班停派（全域；per-lane 可在 lane 詳細覆寫）</label>
+            <span style="display:flex;gap:8px;align-items:center">
+              <input type="time" id="quit-time" style="width:auto">
+              <span id="quit-hint" class="muted" style="font-size:10px"></span>
+            </span>
+            <div class="muted" style="font-size:10px;margin-top:8px">到點所有 lane 只停派新工，in-flight 做完（不殺既有 pi）。</div>
+          </div>
+        </div>
+
+        <!-- 角色全景 -->
+        <div class="cfg-sec" id="cfg-sec-roles" style="display:none">
+          <div class="card">
+            <h2>角色全景（①–⑤ 與目前指派模型）</h2>
+            <div class="roles" id="roles"></div>
+            <div class="muted" style="font-size:10px;margin-top:8px">① Intake / ② Planner 目前缺，由人肉代勞；先跑 ③④⑤。</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- New Lane modal -->
+<div class="modal-bg" id="nl-modal">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:start">
+      <div>
+        <h3>New Lane</h3>
+        <div class="desc">建一條開發 lane：指定專案、backlog items、檔案互斥清單、lane 組成。組成受 ORCH_LANE_CAP=3 / ORCH_PI_CAP=8 夾住。</div>
+      </div>
+      <span class="close" id="nl-close">✕</span>
+    </div>
+    <label>Project（專案）</label><input id="n-project" placeholder="gesture">
+    <label>Name</label><input id="n-name" placeholder="gesture">
+    <label>工作目錄 workdir（RobotProject 根目錄；找 / 存檔案都限在這裡，會儲存起來）</label>
+    <span style="display:flex;gap:6px">
+      <input id="n-workdir" placeholder="~/orch/RobotProject">
+      <button class="btn sm" id="n-workdir-pick" type="button">選擇資料夾…</button>
+    </span>
+    <div id="n-workdir-chip" style="margin-top:4px"></div>
+    <div class="muted" style="font-size:10px;margin-top:4px">預設結構（lane 設定在 <code>.piforge/lanes/&lt;lane&gt;/lane.yaml</code>）：</div>
+    <pre class="log" style="min-height:0;max-height:150px;font-size:10px;margin:2px 0 0">RobotProject/
+├── src/
+├── docs/
+├── ...
+└── .piforge/
+    ├── project.yaml
+    └── lanes/
+        ├── lane-001/lane.yaml
+        ├── lane-002/lane.yaml
+        └── lane-003/lane.yaml</pre>
+    <label>Items（BL-XXX-000 …）</label><input id="n-items" placeholder="BL-GESTURE-007 BL-GESTURE-008">
+    <label>Files（檔重疊檢查用，相對 workdir；強烈建議帶）</label><input id="n-files" placeholder="collect.py">
+    <label>Lane 組成（受 ORCH_LANE_CAP=3 / ORCH_PI_CAP=8 夾住）</label>
+    <div class="comprow">
+      <div class="f"><span>Workers</span><div class="stepper" data-step="workers"><button data-d="-1">−</button><span class="val" id="c-workers">2</span><button data-d="1">＋</button></div></div>
+      <div class="f"><span>Reviewers</span><div class="stepper" data-step="reviewers"><button data-d="-1">−</button><span class="val" id="c-reviewers">1</span><button data-d="1">＋</button></div></div>
+      <div class="f"><span>Final Reviewer</span><div class="stepper" data-step="final"><button data-d="-1">−</button><span class="val" id="c-final">1</span><button data-d="1">＋</button></div></div>
+      <div class="f"><span>rework/task（預設全域 5）</span><div class="stepper" data-step="rework"><button data-d="-1">−</button><span class="val" id="c-rework">5</span><button data-d="1">＋</button></div></div>
+    </div>
+    <div class="muted" style="font-size:10px;margin-top:4px">在 live lane 調整這些數量也一樣：<b style="color:var(--fg)">只影響之後dispatch，絕不中斷已派出去的 worker/reviewer/Final Reviewer</b>（降數量＝不再派新的、超出的自然做完）。</div>
+    <div class="redwarn" id="final-warn">⚠ 已關閉獨立 Final Reviewer（=0），合併僅靠人工確認。這是「Review 獨立性」的手動 opt-out，預設不關。</div>
+    <div class="row" style="justify-content:flex-end"><button class="btn primary" data-act="new">orch new</button></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const API=""; let POLL_MS=4000, pollTimer=null;
+
+// ---- cloud 供應商：connected=有無接通，on=啟用開關 ----
+// 4 個獨立 provider（對應 pi auth 各自一組憑證）：Copilot / Claude(anthropic) / GPT(openai-codex) / Local(vLLM)
+// state: "stored"（pi auth ✓ stored）/ "up"（vLLM 可達）/ "unconfigured" / "no-key"（未設定→需 setup）
+let CLOUD={
+  copilot:{label:"Copilot", prov:"github-copilot", tag:"訂閱 gateway", on:true, connected:true, state:"stored", quota:"正常",
+    desc:"GitHub Copilot 訂閱（月費固定，premium request）",
+    setup:{steps:["OAuth 登入：pi auth login --provider github-copilot",
+                  "檢查就緒：pi auth check --provider github-copilot（應回 stored/ready）"],
+           cmd:"pi auth check --provider github-copilot"}},
+  claude:{label:"Claude", prov:"anthropic", tag:"Anthropic 直連", on:true, connected:true, state:"stored", quota:"正常",
+    desc:"Anthropic 直連 API（Claude 模型），獨立金鑰、獨立額度池",
+    setup:{steps:["pi auth login --provider anthropic（存 API key）",
+                  "檢查就緒：pi auth check --provider anthropic（應回 stored/ready）"],
+           cmd:"pi auth check --provider anthropic"}},
+  gpt:{label:"GPT", prov:"openai-codex", tag:"OpenAI Codex 直連", on:true, connected:true, state:"stored", quota:"正常",
+    desc:"OpenAI Codex 直連 API（GPT 模型），獨立金鑰、獨立額度池",
+    setup:{steps:["pi auth login --provider openai-codex（存 API key）",
+                  "檢查就緒：pi auth check --provider openai-codex（應回 stored/ready）"],
+           cmd:"pi auth check --provider openai-codex"}},
+  local:{label:"Local LLM", prov:"local-vllm", tag:"vLLM", on:true, connected:true, state:"up",
+    desc:"local vLLM（Qwen3.8-27B-nvfp4）；worker 預設、cloud 全滿時的保底",
+    config:{base_url:"http://10.1.14.133:18090/v1", model:"Qwen3.8-27B-nvfp4", api_key:""},
+    setup:{steps:["確認 vLLM 服務在 base_url（HTTP 可達）",
+                  "存 settings/secrets/local-vllm-api-key.json（base_url / model / api_key，不進 git）",
+                  "ping 測試：GET {base_url}/models 回得到 model 列表"],
+           cmd:"curl -s {base_url}/models -H \"Authorization: Bearer $API_KEY\""}},
+};
+
+// ---- 模型型錄（sample；真實走 GET /api/models）----
+const VENDORS=[{id:"copilot",label:"Copilot（月費固定）"},{id:"metered",label:"Metered（直連 API）"},{id:"local",label:"Local（vLLM）"}];
+const MODELS={
+  copilot:["claude-opus-5","claude-sonnet-5","gpt-5.6-luna","gpt-5.6-sol","gemini-3.8-flash","grok-4.7","kimi-k3"],
+  metered:["anthropic/claude-opus-5","anthropic/claude-sonnet-5","openai/gpt-5.6","openai/gpt-5.6-mini"],
+  local:["Qwen3.8-27B-nvfp4"],
+};
+const EFFORTS=["off","minimal","low","medium","high","xhigh","max"];
+const PREMIUM=m=>/opus|gpt-5\.6|grok|gemini-3\.8|kimi/.test(m);
+const FAMILY=m=>/claude|opus|sonnet/.test(m)?"claude":/gpt/.test(m)?"gpt":/gemini/.test(m)?"gemini":/grok/.test(m)?"grok":/kimi/.test(m)?"kimi":/qwen/i.test(m)?"qwen":"other";
+
+const ROLES=[
+  {id:"orchestrator",label:"③ Orchestrator",note:"dispatch決策 / prompt / no_touch"},
+  {id:"worker",label:"④ Worker",note:"成本重心，local 優先"},
+  {id:"reviewer",label:"④ Reviewer",note:"機械檢查走 Python，判斷走 cloud"},
+  {id:"finalgate",label:"⑤ Final Reviewer",note:"必須與本 lane 做事的家不同"},
+];
+let CHAINS={
+  orchestrator:[{v:"copilot",m:"claude-opus-5",e:"high"},{v:"metered",m:"anthropic/claude-opus-5",e:"high"},{v:"local",m:"Qwen3.8-27B-nvfp4",e:"high"}],
+  worker:[{v:"local",m:"Qwen3.8-27B-nvfp4",e:"medium"},{v:"copilot",m:"gpt-5.6-luna",e:"medium"}],
+  reviewer:[{v:"copilot",m:"gpt-5.6-luna",e:"high"},{v:"metered",m:"openai/gpt-5.6",e:"high"},{v:"local",m:"Qwen3.8-27B-nvfp4",e:"medium"}],
+  finalgate:[{v:"copilot",m:"gpt-5.6-luna",e:"xhigh"},{v:"metered",m:"openai/gpt-5.6",e:"high"}],
+};
+
+const ROLE_LANDSCAPE=[
+  {n:"①",label:"Intake 對話",model:"缺",gap:true},
+  {n:"②",label:"Planner",model:"缺",gap:true},
+  {n:"③",label:"Orchestrator",model:"copilot/claude-opus-5"},
+  {n:"④",label:"Worker/Reviewer",model:"local · copilot"},
+  {n:"⑤",label:"Final Reviewer",model:"copilot/gpt-5.6"},
+];
+
+// ---- lane 物流式 pipeline：5 phase ----
+const PHASES=[
+  {id:"dispatch",     l:"Dispatch"},
+  {id:"implement",    l:"Implement"},
+  {id:"local_review", l:"Local Review"},
+  {id:"final_review", l:"Final Review"},
+  {id:"integrate",    l:"Integrate"},
+  {id:"merge_main",   l:"Merge Main"},
+  {id:"done",         l:"Done"},
+];
+// 線性 happy-path 進度；REWORK 回環（Local/Final Review FAIL → REWORK → Implement、Integrate FAIL → REWORK/FIX_INTEGRATION）由 rework 計數與狀態呈現
+function lanePhaseIndex(l){
+  if(l.merge==="merged") return 6;                                // DONE
+  if(l.merge==="merging"||l.merge==="ready") return 5;            // MERGE_MAIN
+  const g=l.gates||{};
+  if(g.final==="PASS") return 4;                                  // INTEGRATE
+  if(g.final==="RUN"||g.final==="INPROG") return 3;               // FINAL_REVIEW
+  if(g.self==="PASS") return 3;                                   // FINAL_REVIEW
+  if(g.task==="PASS") return 2;                                   // LOCAL_REVIEW
+  const wk=l.inflight.find(p=>p.role==="worker"&&p.status!=="queued");
+  if(wk) return 1;                                                // IMPLEMENT
+  return 0;                                                       // DISPATCH
+}
+function phaseLabel(l){const i=lanePhaseIndex(l);return PHASES[Math.min(i,PHASES.length-1)].l;}
+function pipelineHTML(l){
+  const idx=lanePhaseIndex(l);
+  const n=PHASES.length;
+  const c=i=>(i+0.5)/n*100;                                       // 第 i 顆 dot 中心（%）
+  const first=c(0), span=c(n-1)-first;
+  const fillPct=idx>=n-1?span:(c(idx)-first);
+  const dur=l.dur||[];
+  // 段間時間：dot i 與 dot i+1 的中點＝在第 i 個 phase 花了多久；phase 完成才顯示
+  const segs=PHASES.slice(0,n-1).map((_,i)=>{
+    const done=(idx>=n-1||i<idx);
+    if(!done) return "";
+    const t=(dur[i]>0?fmtDur(dur[i]):"—");
+    return `<span class="segtime" style="left:${(i+1)/n*100}%">${t}</span>`;
+  }).join("");
+  return `<div class="pipeline" style="--first:${first}%;--span:${span}%;--fill:${fillPct}%" title="點任一階段切換到該頁；中間數字＝該段處理時間">`
+    +segs
+    +PHASES.map((p,i)=>{
+      let cls=idx>=n-1?"done":(i<idx?"done":(i===idx?"active":"todo"));
+      return `<div class="phase ${cls}" data-phase="${p.id}" title="${p.l}：點此看詳細"><span class="dotp">${cls==="done"?"✓":""}</span><span class="plbl">${p.l}</span></div>`;
+    }).join("")+`</div>`;
+}
+// 左欄 mini 進度條
+function miniHTML(l){
+  const idx=lanePhaseIndex(l);
+  const all=idx>=PHASES.length-1;
+  return `<div class="mini">`+PHASES.map((_,i)=>{
+    let c="seg"; if(all||i<idx)c+=" on"; else if(i===idx)c+=" act";
+    return `<span class="${c}"></span>`;
+  }).join("")+`</div>`;
+}
+
+// ---- backlog 分配（sample；真實＝各 lane.conf items ＋ run.meta dispatch事件）----
+const BL_ST={
+  unassigned:{cls:"unassigned",label:"未分配"},
+  assigned:{cls:"assigned",label:"已分配·未派"},
+  queued:{cls:"queued",label:"排隊"},
+  running:{cls:"running",label:"進行中"},
+  reviewing:{cls:"reviewing",label:"審查中"},
+  done:{cls:"done",label:"完成·待合"},
+  merged:{cls:"merged",label:"✓ 已進 main"},
+};
+const BACKLOG=[
+  {id:"BL-GESTURE-007",title:"collect.py 加 --no-preview fail-safe",lane:"gesture",who:"worker（rework #2/5）",status:"running",
+   model:"local/Qwen3.8-27B（fallback）",prompt:"擴充 tools/gesture/collect.py：加 --no-preview 讓預覽視窗永不阻塞擷取。3 條驗收：①--no-preview 時不開窗 ②預設仍開窗 ③dry-run 綠。",
+   no_touch:["shells/gesture/collect.sh","tools/agents/config.py"]},
+  {id:"BL-GESTURE-006",title:"landmark 平滑（EMA）",lane:"gesture",who:"reviewer（審查中）",status:"reviewing",
+   model:"copilot/gpt-5.6-luna",prompt:"審查 worker BL-GESTURE-006 的 landmark EMA 實作：看 diff + 跑一次關鍵驗證，輸出 reviews/BL-GESTURE-006.pi.md（Verdict/Findings/Validation）。",
+   no_touch:["（reviewer 無 edit/write）"]},
+  {id:"BL-GESTURE-008",title:"temporal window 聚合",lane:"gesture",who:"—（排隊，併發滿 2/2）",status:"queued",
+   model:"local/Qwen3.8-27B",prompt:"（尚未dispatch；lane 併發已滿，QUEUED）",no_touch:["gesture/collect.py（Worker1 獨佔）"]},
+  {id:"BL-SED-003",title:"sound event detection 門檻",lane:"sed",who:"—（lane 已建，未派）",status:"assigned",
+   model:"—",prompt:"（lane.conf 已列入 items，orchestrator 尚未產dispatch prompt）",no_touch:[]},
+  {id:"BL-WAKE-002",title:"wake word 靈敏度調校",lane:"wake",who:"Final Reviewer PASS",status:"merged",
+   model:"copilot/gpt-5.6-luna",prompt:"（已完成並合併進 main）",no_touch:[]},
+  {id:"BL-GESTURE-009",title:"gesture 事件去抖",lane:"—",who:"—",status:"unassigned",
+   model:"—",prompt:"（尚未納入任何 lane）",no_touch:[]},
+];
+
+// ---- 角色（worker/reviewer/Final Reviewer）狀態 ----
+const AGENT_ST={
+  run:   {cls:"run",   label:"● 執行中"},
+  stall: {cls:"stall", label:"⚠ 停滯"},
+  rework:{cls:"rework",label:"↻ rework 中"},
+  queued:{cls:"queued",label:"⏸ 排隊"},
+  done:  {cls:"done",  label:"✓ 完成"},
+  failed:{cls:"failed",label:"✗ 失敗"},
+};
+// ---- merge 狀態：lane 最關鍵的資訊 ----
+const MERGE={
+  open:   {cls:"open",   label:"● 未合併"},
+  ready:  {cls:"ready",  label:"◇ 可合併（Gate PASS）"},
+  merging:{cls:"merging",label:"⟳ 合併中"},
+  merged: {cls:"merged", label:"✓ 已進 main"},
+};
+
+// ---- sample 狀態 ----
+const SAMPLE={
+  main:"a3f9c21", pi:{running:2,cap:8}, tokens:1843220, copilot:{used:38,cap:300},
+  lanes:[
+    {name:"gesture",project:"Gesture",branch:"integ/lane-gesture",base:"9c1e7b0",ahead:7,paused:false,elapsed:167,
+      workdir:"~/orch/gesture", merge:"open", comp:{workers:2,reviewers:1,final:1,rework:5},
+     items:["BL-GESTURE-006","BL-GESTURE-007","BL-GESTURE-008"], files:["collect.py","landmark.py"],
+      dur:[2,41,0,0,0,0,0],
+     models:{worker:{v:"local",m:"Qwen3.8-27B-nvfp4",e:"medium"},reviewer:{v:"copilot",m:"gpt-5.6-luna",e:"high"},final:{v:"copilot",m:"gpt-5.6-luna",e:"xhigh"}},
+     inflight:[
+       {role:"worker",task:"BL-GESTURE-007",status:"rework",age:4,stall:false,rework:2,
+        model:"local/Qwen3.8-27B",fb:true,act:"edit tools/gesture/collect.py：加 --no-preview fail-safe"},
+       {role:"reviewer",task:"BL-GESTURE-006",status:"stall",age:11,stall:true,rework:0,
+        model:"copilot/gpt-5.6-luna",fb:false,act:"reading diff… (jsonl 11m 未更新)"},
+       {role:"worker",task:"BL-GESTURE-008",status:"queued",age:0,stall:false,rework:0,
+        model:"local/Qwen3.8-27B",fb:false,act:"排隊中（lane 併發已滿 2/2）"}],
+     reviews:3, gates:{task:"PASS",self:"PENDING",final:"—"}},
+    {name:"sed",project:"Audio",branch:"integ/lane-sed",base:"77aa2d4",ahead:2,paused:true,stopAt:"21:30",elapsed:308,
+      workdir:"~/orch/audio", merge:"ready", comp:{workers:2,reviewers:1,final:0,rework:5},
+     items:["BL-SED-003"], files:["threshold.py"],
+      dur:[5,120,80,40,10,0,0],
+     models:{worker:{v:"local",m:"Qwen3.8-27B-nvfp4",e:"medium"},reviewer:{v:"copilot",m:"claude-opus-5",e:"high"},final:{v:"metered",m:"openai/gpt-5.6",e:"high"}},
+     inflight:[], reviews:1, gates:{task:"PASS",self:"PASS",final:"OFF"}},
+    {name:"wake",project:"Audio",branch:"integ/lane-wake",base:"a3f9c21",ahead:0,paused:false,elapsed:95,
+      workdir:"~/orch/audio", merge:"merged", comp:{workers:1,reviewers:1,final:1,rework:5},
+     items:["BL-WAKE-002"], files:["calib.py"],
+      dur:[3,30,12,8,5,2,0],
+     models:{worker:{v:"local",m:"Qwen3.8-27B-nvfp4",e:"medium"},reviewer:{v:"copilot",m:"gpt-5.6-luna",e:"high"},final:{v:"copilot",m:"claude-opus-5",e:"xhigh"}},
+     inflight:[
+       {role:"finalgate",task:"lane-wake",status:"done",age:2,stall:false,rework:0,
+        model:"copilot/gpt-5.6-luna",fb:false,act:"Final Reviewer PASS → 已 merge（rc=0）"}],
+     reviews:2, gates:{task:"PASS",self:"PASS",final:"PASS"}},
+  ],
+};
+let STATE={live:false,data:SAMPLE,selLane:null};
+let NEWCOMP={workers:2,reviewers:1,final:1,rework:5};
+let dispatchPick={v:"copilot",m:"gpt-5.6-luna",e:"medium"};
+const esc=s=>(s==null?"":String(s)).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const fmtDur=min=>{const h=Math.floor(min/60),m=min%60;return h?`${h}h${m}m`:`${m}m`;};
+// 三色狀態：log 字列依內容上色（紅=需處理 > 黃=需查看(不阻塞) > 綠=ok）
+function logClass(line){
+  if(/FAIL|failed|失敗|rc=[1-9]|rc≠0|PAUSED|獨立性風險/i.test(line)) return "action";
+  if(/PROVIDER_FALLBACK|fallback|降級|stall|停滯|PENDING|QUEUED|排隊|rework/i.test(line)) return "info";
+  if(/MERGED|PASS|rc=0|\bOK\b|start|執行中|running/i.test(line)) return "ok";
+  return "";
+}
+function logHTML(text){
+  return String(text).split("\n").map(line=>{
+    if(!line.trim())return "";
+    const c=logClass(line);
+    return `<div class="log-line${c?" "+c:""}">${esc(line)}</div>`;
+  }).join("");
+}
+
+// ---- 頁籤切換 ----
+let curTab="cmd";
+function showTab(id){
+  curTab=id;
+  $$(".navbtn").forEach(b=>b.classList.toggle("sel",b.dataset.tab===id));
+  $$(".tab-panel").forEach(p=>p.classList.toggle("show",p.id==="tab-"+id));
+  if(id==="git")renderGitTab(STATE.data);
+  if(id==="usage"){renderFbList(currentFallbacks());renderQuota();}
+  if(id==="specs")renderSpecs();
+  if(id==="cfg"){renderCloud();renderSetup();renderLocalCfg();renderRoleTabs();renderChain();renderCfgTab();}
+}
+$$(".navbtn").forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+
+// ---- cloud 供應商列（設定頁）----
+function renderCloud(){
+  const box=$("#cloud"); box.innerHTML="";
+  Object.entries(CLOUD).forEach(([id,p])=>{
+    const el=document.createElement("div");
+    el.className="cloudrow"+(p.on?"":" off");
+    const dotCls=!p.on?"off":(p.connected?"on":"bad");
+    let status, scls;
+    if(!p.on){status="已停用";scls="off";}
+    else if(p.connected){status="✓ 已接通";scls="ok";}
+    else if(p.state==="no-key"){status="✗ 未設定金鑰";scls="action";}
+    else {status="⚠ 未接通";scls="action";}
+    el.innerHTML=`<span class="dot ${dotCls}"></span>`
+      +`<div class="cr-main"><b>${esc(p.label)}</b><div class="cr-svc">${esc(p.services)}</div></div>`
+      +`<span class="cr-status ${scls}">${status}</span>`
+      +`<span class="sw">${p.on?"ON":"OFF"}</span>`;
+    el.title="接通＝能不能用（pi auth check / 金鑰 / vLLM 可達）；on/off＝要不要用。點一下切換 on/off。";
+    el.onclick=()=>{p.on=!p.on; renderCloud(); renderSetup(); toast(`Cloud ${p.label} → ${p.on?"ON":"OFF"}（靜態預覽）`);};
+    box.appendChild(el);
+  });
+}
+// ---- 連線 Setup：就緒狀態 / 安裝+設定指令 / Local LLM 設定 ----
+function providerReady(p){ return p.state==="ready"||p.state==="up"; }
+function renderSetupBanner(){
+  const b=$("#setup-banner"); if(!b)return;
+  const notReady=Object.values(CLOUD).filter(p=>p.on&&!providerReady(p));
+  if(notReady.length){ b.className="setup-banner warn";
+    b.textContent=`⚠ 首次使用：有 ${notReady.length} 家尚未就緒（${notReady.map(p=>p.label).join("、")}）——照下方指令設定後再dispatch。`;
+  } else { b.className="setup-banner ok"; b.textContent="✓ 全部就緒，可直接dispatch。"; }
+}
+function renderSetup(){
+  renderSetupBanner();
+  const box=$("#setup-detail"); if(!box)return;
+  box.innerHTML=Object.entries(CLOUD).map(([id,p])=>{
+    if(!p.on) return `<div class="setup-card"><div class="setup-head"><span class="dot off"></span><span class="nm">${esc(p.label)}</span>`
+      +`<span class="cr-status off" style="margin-left:auto">已停用</span>`
+      +`<button class="btn sm" data-setup-check="${id}">重新檢查</button></div>`
+      +`<div class="muted" style="font-size:10px;margin-top:6px">停用中；上方總覽開啟後才進 provider chain 選用。</div></div>`;
+    const ready=providerReady(p);
+    const cls=ready?"ok":(p.state==="no-key"?"warn":"bad");
+    return `<div class="setup-card ${cls}">`
+      +`<div class="setup-head"><span class="dot ${ready?"on":"bad"}"></span><span class="nm">${esc(p.label)}</span>`
+      +`<span class="muted" style="font-size:10px">${esc(p.services)}</span>`
+      +`<span class="cr-status ${ready?"ok":"action"}" style="margin-left:auto">${ready?"✓ 已就緒":"需設定"}</span>`
+      +`<button class="btn sm" data-setup-check="${id}">重新檢查</button></div>`
+      +(ready
+        ?`<div class="muted" style="font-size:10px;margin-top:6px">已就緒 · 可dispatch。</div>`
+        :`<ol class="setup-steps">${p.setup.steps.map(s=>`<li>${esc(s)}</li>`).join("")}</ol>`
+          +`<div class="cmdbox"><code>${esc(p.setup.cmd)}</code><button class="btn sm" data-cmd="${id}" title="複製指令">複製</button></div>`)
+    +`</div>`;
+  }).join("");
+}
+function renderLocalCfg(){
+  const box=$("#local-cfg"); if(!box)return;
+  const p=CLOUD.local, c=p.config||{}, ok=providerReady(p);
+  const light=ok?`<span class="llm-light" style="color:var(--ok)"><span class="dot on"></span>vLLM 就緒</span>`
+                :`<span class="llm-light" style="color:var(--action)"><span class="dot bad"></span>vLLM 未就緒</span>`;
+  box.innerHTML=`<div class="setup-card ${ok?"ok":"bad"}">`
+    +`<div class="setup-head" data-local-toggle style="cursor:pointer" title="點開顯示 / 收合 Local vLLM 設定">`
+      +`<span class="caret" style="color:var(--dim);font-size:10px">▸</span><span class="nm">Local vLLM 設定</span>${light}`
+    +`</div>`
+    +`<div class="local-cfg-detail" style="display:none">`
+      +`<div class="muted" style="font-size:10px;margin:6px 0">存於 <code>settings/secrets/local-vllm-api-key.json</code>（不進 git）。worker 預設走這、cloud 全滿時的保底。</div>`
+      +`<div class="localform">`
+      +`<label>base_url</label><input id="local-baseurl" value="${esc(c.base_url||"")}">`
+      +`<label>model</label><input id="local-model" value="${esc(c.model||"")}">`
+      +`<label>api_key（已載入；編輯時填入真實值，不顯示在畫面上）</label><input id="local-apikey" type="password" value="" placeholder="sk-••••••••••••">`
+      +`</div>`
+      +`<div class="row" style="justify-content:flex-end"><button class="btn sm" data-act="local-test">測試連線</button>`
+      +`<button class="btn primary sm" data-act="local-save">儲存</button></div>`
+    +`</div></div>`;
+}
+// 設定頁分頁籤（連線 Setup / 模型設定 / Monitor / 角色全景）
+let cfgTab="setup";
+function renderCfgTab(){
+  $$("#cfg-tabs .ldtab").forEach(t=>t.classList.toggle("sel",t.dataset.cfgtab===cfgTab));
+  ["setup","models","monitor","roles"].forEach(s=>{const el=$("#cfg-sec-"+s);if(el)el.style.display=(s===cfgTab)?"":"none";});
+}
+function vendorConnected(v){ if(v==="local")return CLOUD.local.connected; return (CLOUD[v]||{}).connected; }
+function vendorOn(v){ return (CLOUD[v]||{on:true}).on; }
+
+function chip(v,m){
+  let out="";
+  if(!vendorOn(v)) out+=`<span class="chip noready">停用</span>`;
+  else if(!vendorConnected(v)) out+=`<span class="chip noready">未接通</span>`;
+  else out+=`<span class="chip ready">ready</span>`;
+  if(v==="copilot"&&PREMIUM(m)) out+=`<span class="chip prem">premium</span>`;
+  return out;
+}
+
+function pickerRow(val,onChange,delFn){
+  const wrap=document.createElement("div"); wrap.className="picker";
+  const vSel=document.createElement("select");
+  vSel.innerHTML=VENDORS.map(v=>`<option value="${v.id}" ${v.id===val.v?"selected":""}>${esc(v.label)}</option>`).join("");
+  const mSel=document.createElement("select");
+  const fillM=()=>{mSel.innerHTML=(MODELS[val.v]||[]).map(m=>`<option ${m===val.m?"selected":""}>${esc(m)}</option>`).join("");};
+  fillM();
+  const eSel=document.createElement("select");
+  eSel.innerHTML=EFFORTS.map(e=>`<option ${e===val.e?"selected":""}>${e}</option>`).join("");
+  const chipBox=document.createElement("span"); chipBox.innerHTML=chip(val.v,val.m);
+  vSel.onchange=()=>{val.v=vSel.value;val.m=(MODELS[val.v]||[])[0];fillM();chipBox.innerHTML=chip(val.v,val.m);onChange&&onChange();};
+  mSel.onchange=()=>{val.m=mSel.value;chipBox.innerHTML=chip(val.v,val.m);onChange&&onChange();};
+  eSel.onchange=()=>{val.e=eSel.value;onChange&&onChange();};
+  wrap.append(vSel,mSel,eSel);
+  if(delFn){const d=document.createElement("span");d.className="del";d.textContent="✕";d.onclick=delFn;wrap.append(d);}
+  else{wrap.append(document.createElement("span"));}
+  const line=document.createElement("div");line.style.gridColumn="1 / -1";line.style.marginTop="-2px";line.append(chipBox);
+  const holder=document.createElement("div");holder.append(wrap,line);return holder;
+}
+function renderDispatchPicker(){const b=$("#dispatch-picker");if(!b)return;b.innerHTML="";b.append(pickerRow(dispatchPick,()=>{}));}
+
+// ---- 角色全景（設定頁，靜態）----
+function renderRoles(){
+  $("#roles").innerHTML=ROLE_LANDSCAPE.map((r,i)=>
+    `<div class="role ${r.gap?"gap":""}"><span class="n">${r.n}</span>${esc(r.label)} <span class="m">${esc(r.model)}</span></div>`
+    +(i<ROLE_LANDSCAPE.length-1?'<span class="arrow">▸</span>':'')).join("");
+}
+
+// ---- 左欄：lane 清單（只 name + phase status）----
+let collapsedProjects=new Set();
+function groupLanesByProject(lanes){
+  const m=new Map();
+  lanes.forEach(l=>{const p=l.project||"未分組"; if(!m.has(p))m.set(p,[]); m.get(p).push(l);});
+  return [...m.entries()];
+}
+function renderLaneList(d){
+  const el=$("#lanes");
+  if(!d.lanes.length){el.innerHTML=`<div class="muted" style="font-size:11px;padding:4px 0">（無 Lane）</div>`;return;}
+  el.innerHTML=groupLanesByProject(d.lanes).map(([proj,lanes])=>{
+    const collapsed=collapsedProjects.has(proj);
+    const items=lanes.map(l=>{
+      const mb=MERGE[l.merge]||MERGE.open;
+      return `<div class="lane-item ${l.name===STATE.selLane?"sel":""}" data-lane="${esc(l.name)}">`
+        +`<div class="li-top"><span class="name">${esc(l.name)}</span><span class="mb ${mb.cls}">${mb.label}</span></div>`
+        +miniHTML(l)
+        +`<div class="li-ph">◉ ${phaseLabel(l)} <span class="muted">· ⏱ ${fmtDur(l.elapsed||0)}</span>${l.paused?` <span style="color:var(--action);font-weight:700">⏸ 暫停</span>`:""}</div>`
+      +`</div>`;
+    }).join("");
+    return `<div class="proj">`
+      +`<div class="proj-head" data-proj-toggle="${esc(proj)}"><span class="caret">${collapsed?"▸":"▾"}</span>`
+      +`<span class="proj-name">${esc(proj)}</span><span class="proj-count">${lanes.length}</span></div>`
+      +`<div class="proj-body"${collapsed?' style="display:none"':""}>${items}</div>`
+    +`</div>`;
+  }).join("");
+  $$("#lanes .lane-item").forEach(it=>it.onclick=()=>{STATE.selLane=it.dataset.lane;render();});
+}
+
+// ---- 中欄：該 Lane 詳細 ----
+function agentsHTML(l){
+  return l.inflight.map(p=>{
+    const st=p.stall?AGENT_ST.stall:(AGENT_ST[p.status]||AGENT_ST.run);
+    const roleLabel={worker:"worker",reviewer:"reviewer",finalgate:"Final Reviewer"}[p.role]||p.role;
+    return `<div class="agent">`
+      +`<div class="a-top"><span class="tag ${p.role}">${roleLabel}</span><b style="font-size:11px">${esc(p.task)}</b>`
+      +`<span class="sbadge ${st.cls}">${st.label}</span></div>`
+      +`<div class="a-sub">`
+        +`<span class="mdl ${p.fb?"fb":""}">${p.fb?"↘ ":""}${esc(p.model)}${p.fb?"（fallback）":""}</span>`
+        +`<span>age ${p.age}m</span>`
+        +(p.role==="worker"?`<span class="rw">rework <b>${p.rework}</b>/${l.comp.rework}</span>`:``)
+      +`</div>`
+      +`<div class="a-act">↳ ${esc(p.act||"")}</div>`
+    +`</div>`;
+  }).join("") || `<div class="pi muted" style="margin-top:6px">（無 in-flight pi）</div>`;
+}
+function laneDetailHTML(l){
+  const mb=MERGE[l.merge]||MERGE.open;
+  return `<div class="dhead"><span class="name">${esc(l.name)}</span>`
+    +`<span class="mb ${mb.cls}">${mb.label}${l.merge!=="merged"&&l.ahead?` +${l.ahead}`:""}</span></div>`
+    +`<div class="muted" style="font-size:11px">${esc(l.branch)} · base ${esc(l.base)} · 領先 main +${l.ahead} · ⏱ ${fmtDur(l.elapsed||0)}</div>`
+    +`<div class="wdirrow"><span class="wdir" title="RobotProject workdir（找/存檔案限此目錄）· lane 設定在 .piforge/lanes/&lt;lane&gt;/lane.yaml">📁 ${esc(l.workdir||"（未設工作目錄）")}</span>`
+    +`<span class="muted" style="font-size:10px;white-space:nowrap">= RobotProject 根 · 找/存檔案限此目錄</span>`
+    +`<button class="btn sm" data-wdir="${esc(l.name)}">變更</button></div>`
+    +pipelineHTML(l)
+    +`<div class="muted" style="font-size:10px">W${l.comp.workers} · R${l.comp.reviewers} · Final Reviewer ${l.comp.final||"OFF ⚠"} · rework≤${l.comp.rework} · reviews=${l.reviews}</div>`
+    +`<div style="height:4px"></div>`
+    +agentsHTML(l)
+    +`<div class="foot">`
+      +`<span class="muted" style="font-size:10px">Gate: T=${esc(l.gates.task)} · 自審=${esc(l.gates.self)} · Final Reviewer=${esc(l.gates.final)}</span>`
+      +`<button class="btn sm" data-pause="${esc(l.name)}">${l.paused?"▶ RESUME":"⏸ PAUSE"}</button>`
+    +`</div>`
+    +`<div class="foot" style="margin-top:4px">`
+      +`<span class="rw">⏱ 排程停止 <input type="time" data-stop="${esc(l.name)}" value="${esc(l.stopAt||'')}" style="width:auto;display:inline-block;padding:1px 4px;font-size:10px"> <span class="muted">到點只停dispatch，in-flight 做完</span></span>`
+      +(l.stopAt?`<span class="mb ready">⏱ ${esc(l.stopAt)}</span>`:``)
+    +`</div>`;
+}
+function emptyLaneHTML(){
+  return `<div class="empty"><div class="ic">🛻</div><div class="t">尚無 Lane</div>`
+    +`<div class="d">中間的dispatch對話會跟著選定的 Lane 顯示。要開始工作，請先新開一條 Lane。</div>`
+    +`<button class="btn primary" id="empty-newlane">＋ New Lane</button></div>`;
+}
+
+function currentFallbacks(){
+  const fbs=[]; (STATE.data.lanes||[]).forEach(l=>(l.inflight||[]).forEach(p=>{if(p.fb)fbs.push(`${p.role} ${p.task} → ${p.model}`);}));
+  return fbs;
+}
+function renderFbList(fbs){
+  const box=$("#fb-list"); if(!box)return;
+  box.innerHTML=fbs.length?fbs.map(f=>`<div class="fb-item">↘ ${esc(f)}</div>`).join(""):`<div class="muted" style="font-size:11px">（無降級）</div>`;
+}
+function renderGitTab(d){
+  const box=$("#git-lanes"); if(!box)return;
+  box.innerHTML=`<div class="tlabel" style="margin-top:14px">各 lane branch（領先 main）</div>`
+    +`<table class="git-tab"><thead><tr><th>lane</th><th>branch</th><th>base</th><th>ahead</th><th>merge</th></tr></thead><tbody>`
+    +d.lanes.map(l=>{const mb=MERGE[l.merge]||MERGE.open;
+      return `<tr><td><b>${esc(l.name)}</b></td><td class="mono">${esc(l.branch)}</td><td class="mono">${esc(l.base)}</td><td>+${l.ahead}</td><td><span class="mb ${mb.cls}">${mb.label}</span></td></tr>`;
+    }).join("")+`</tbody></table>`;
+}
+function render(){
+  const d=STATE.data;
+  // stats 收進 Git / 用量 頁籤（元素在 panel 內，隱藏也照常更新）
+  $("#st-main").textContent=d.main;
+  $("#st-pi").textContent=d.pi.running+"/"+d.pi.cap;
+  $("#st-tokens").textContent=d.tokens.toLocaleString();
+  const cop=d.copilot||{used:0,cap:0};
+  const copEl=$("#st-cop"); copEl.textContent=`${cop.used}/${cop.cap} premium`;
+  copEl.style.color=(cop.cap&&cop.used/cop.cap>=0.8)?"var(--warn)":"var(--fg)";
+  const fbs=currentFallbacks();
+  // 頂欄只留簡報降級 alert（明細在「用量」頁）
+  const fi=$("#fb-ind");
+  if(fbs.length){fi.style.display="";$("#fb-txt").textContent=`⚠ 降級中 ${fbs.length}`;fi.title=fbs.join("\n");}
+  else fi.style.display="none";
+  renderFbList(fbs);
+  if(curTab==="git")renderGitTab(d);
+  // 左：lane 清單
+  renderLaneList(d);
+  // 中：分頁詳細（選定 lane 決定內容；按鈕/切換走全域事件委派）
+  renderCenter();
+}
+
+// ---- 中欄：該 lane 的分頁詳細（每個 phase 一頁＋總覽/dispatch）----
+const LD_TABS=[
+  {id:"dispatch",     l:"Dispatch"},
+  {id:"backlog",      l:"Backlog"},
+  {id:"overview",     l:"總覽"},
+  {id:"implement",    l:"Implement"},
+  {id:"local_review", l:"Local Review"},
+  {id:"final_review", l:"Final Review"},
+  {id:"integrate",    l:"Integrate"},
+  {id:"merge_main",   l:"Merge Main"},
+  {id:"done",         l:"Done"},
+  {id:"logs",         l:"Log / 事件流"},
+  {id:"retro",        l:"建議"},
+  {id:"settings",     l:"設定"},
+];
+let ldTab="dispatch";
+let dispatchState={task:"",prompt:"",pick:dispatchPick};
+
+function curPhaseId(l){const i=lanePhaseIndex(l);return PHASES[Math.min(i,PHASES.length-1)].id;}
+function renderCenter(){
+  const d=STATE.data, box=$("#lane-detail");
+  let lane=null;
+  if(d.lanes.length){ lane=d.lanes.find(l=>l.name===STATE.selLane)||d.lanes[0]; STATE.selLane=lane.name; }
+  else STATE.selLane=null;
+  if(!lane){
+    box.innerHTML=emptyLaneHTML();
+    return;
+  }
+  // 正在中欄輸入（dispatch prompt/task）時，輪詢不重建，避免焦点被清
+  const ae=document.activeElement;
+  if(ae && (ae.id==="f-task"||ae.id==="f-prompt")) return;
+  if(!LD_TABS.find(t=>t.id===ldTab)) ldTab="dispatch";
+  const mb=MERGE[lane.merge]||MERGE.open, cur=curPhaseId(lane);
+  box.innerHTML=
+    `<div class="dhead"><span class="name">${esc(lane.name)}</span>`
+    +`<span class="mb ${mb.cls}">${mb.label}${lane.merge!=="merged"&&lane.ahead?` +${lane.ahead}`:""}</span>`
+    +`<button class="btn sm" data-pause="${esc(lane.name)}">${lane.paused?"▶ RESUME":"⏸ PAUSE"}</button></div>`
+    +`<div class="muted" style="font-size:11px;margin-top:2px">${esc(lane.branch)} · base ${esc(lane.base)} · ⏱ ${fmtDur(lane.elapsed||0)}</div>`
+    +`<div class="wdirrow"><span class="wdir" title="RobotProject workdir（找/存檔案限此目錄）· lane 設定在 .piforge/lanes/&lt;lane&gt;/lane.yaml">📁 ${esc(lane.workdir||"（未設工作目錄）")}</span>`
+    +`<span class="muted" style="font-size:10px;white-space:nowrap">= RobotProject 根 · 找/存檔案限此目錄</span>`
+    +`<button class="btn sm" data-wdir="${esc(lane.name)}">變更</button></div>`
+    +pipelineHTML(lane)
+    +`<div class="ldtabs">`+LD_TABS.map(t=>
+      `<div class="ldtab ${t.id===ldTab?"sel":""}" data-ldtab="${t.id}">${t.l}${t.id===cur?'<span class="cur" title="目前階段"></span>':""}</div>`).join("")+`</div>`
+    +`<div class="ldpanel" id="ld-panel">${ldTabContent(lane,ldTab)}</div>`;
+  if(ldTab==="dispatch")renderDispatchPicker();
+}
+function ldTabContent(l,id){
+  switch(id){
+    case "implement":    return tabImplement(l);
+    case "local_review": return tabLocalReview(l);
+    case "final_review": return tabFinalReview(l);
+    case "integrate":    return tabIntegrate(l);
+    case "merge_main":   return tabMergeMain(l);
+    case "done":         return tabDone(l);
+    case "logs":         return tabLogs(l);
+    case "retro":        return tabIntrospect(l);
+    case "settings":     return tabSettings(l);
+    case "dispatch":     return tabDispatch(l);
+    case "backlog":      return tabBacklog(l);
+    case "overview":
+    default:             return tabOverview(l);
+  }
+}
+// per-lane Backlog（每個 lane 對應不同專案，只显示該 lane 的 items）
+function tabBacklog(l){
+  const items=(BACKLOG||[]).filter(b=>b.lane===l.name);
+  if(!items.length) return `<div class="tlabel">Backlog（本 lane）</div>`
+    +`<div class="muted" style="font-size:11px">（此 lane 未分配 backlog item）</div>`
+    +`<div class="muted" style="font-size:10px;margin-top:6px">來源＝lane.conf items ＋ run.meta dispatch 事件（純機械）。每個 lane 對應不同專案，backlog 隨 lane。</div>`;
+  return `<div class="tlabel">Backlog（本 lane · ${items.length}）<span class="muted">點一列展開</span></div>`
+    +items.map(b=>{
+      const st=BL_ST[b.status]||BL_ST.unassigned;
+      const nt=b.no_touch&&b.no_touch.length?b.no_touch.map(x=>`<span class="nt">✗ ${esc(x)}</span>`).join("<br>"):'<span class="muted">（無）</span>';
+      return `<div class="bl"><div class="h"><span class="blst ${st.cls}">${st.label}</span><span class="id">${esc(b.id)}</span>`
+        +`<span class="ti">${esc(b.title)}</span><span class="where">${esc(b.who)}</span></div>`
+        +`<div class="body"><div class="lbl">實際模型</div><div style="font-size:11px">${esc(b.model)}</div>`
+        +`<div class="lbl">dispatch 內容（工作）</div><pre>${esc(b.prompt)}</pre>`
+        +`<div class="lbl">禁改清單（no_touch）</div><div style="font-size:11px">${nt}</div></div></div>`;
+    }).join("");
+}
+function gateBox(id,name,sub,val){
+  const cls=val==="PASS"?"pass":(val==="FAIL"?"fail":(val==="OFF"?"fail":"wait"));
+  return `<div class="gate ${cls}"><div class="kv"><span>${name}</span><span>${esc(val||"—")}</span></div><div class="sub">${sub}</div></div>`;
+}
+function tabOverview(l){
+  const g=l.gates||{};
+  const items=(l.items||[]).map(x=>`<span class="chip ready">${esc(x)}</span>`).join(" ")||`<span class="muted">（無）</span>`;
+  const files=(l.files||[]).map(x=>`<span class="chip prem">${esc(x)}</span>`).join(" ")||`<span class="muted">（無）</span>`;
+  return `<div class="tlabel">總覽 · 建立參數</div>`
+    +`<div class="kv"><span>Branch</span><span>${esc(l.branch)} · base ${esc(l.base)} · 領先 main +${l.ahead}</span></div>`
+    +`<div class="kv"><span>已工作</span><span>${fmtDur(l.elapsed||0)}</span></div>`
+    +`<label>Items（backlog）</label><div>${items}</div>`
+    +`<label>Files（檔重疊檢查，相對 workdir）</label><div>${files}</div>`
+    +`<div class="tlabel" style="margin-top:12px">In-flight pi <span class="muted">${l.inflight.length}</span></div>`
+    +agentsHTML(l)
+    +`<div class="foot" style="margin-top:8px"><span class="muted" style="font-size:10px">Gate: Local=${esc(g.task)}/${esc(g.self)} · Final=${esc(g.final)}</span>`
+    +`<span class="muted" style="font-size:10px">W${l.comp.workers} · R${l.comp.reviewers} · Final Reviewer ${l.comp.final||"OFF ⚠"} · reviews=${l.reviews}</span></div>`
+    +`<div class="muted" style="font-size:10px;margin-top:8px">工作目錄、組成、排程停止等 lane 設定在「設定」頁。</div>`;
+}
+// lane 設定（工作目錄 / 組成 / 排程停止）——屬於該 lane
+function tabSettings(l){
+  return `<div class="tlabel">Lane 設定</div>`
+    +`<label>工作目錄 workdir（RobotProject 根目錄；找 / 存檔案都限在這裡，會儲存；lane 設定在 .piforge/lanes/&lt;lane&gt;/lane.yaml）</label>`
+    +`<div class="wdirrow"><span class="wdir" title="RobotProject workdir（找/存檔案限此目錄）· lane 設定在 .piforge/lanes/&lt;lane&gt;/lane.yaml">📁 ${esc(l.workdir||"（未設工作目錄）")}</span>`
+    +`<button class="btn sm" data-wdir="${esc(l.name)}">變更</button></div>`
+    +`<label>Lane 組成（受 ORCH_LANE_CAP=3 / ORCH_PI_CAP=8 夾住）</label>`
+    +`<div class="comprow">`
+      +compStepper(l,"workers","Workers",1,3)
+      +compStepper(l,"reviewers","Reviewers",0,3)
+      +compStepper(l,"final","Final Reviewer",0,1)
+      +compStepper(l,"rework","rework/task",0,20)
+    +`</div>`
+    +`<div class="muted" style="font-size:10px;margin-top:4px">只影響之後dispatch，絕不中斷已派出去的 worker/reviewer/Final Reviewer（降數量＝不再派新的、超出的自然做完）。</div>`
+    +(l.comp.final===0?`<div class="redwarn show">⚠ 已關閉獨立 Final Reviewer（=0），合併僅靠人工確認。</div>`:``)
+    +`<label>角色模型（per-lane 覆寫：Cloud 廠商 → 模型 → 思考強度）</label>`
+    +LANE_MODEL_ROLES.map(r=>`<div class="lm-block"><div class="lm-label">${esc(r.label)}</div>${pickerHTML(l,r.key)}</div>`).join("")
+    +`<div class="muted" style="font-size:10px;margin-top:4px">此 lane 的dispatch首選；未設定時沿用頂層「設定 → 模型設定」的全域 chain。停用／未接通的廠商（見「Pi Cloud 串聯」）不會被選用。</div>`
+    +`<label>排程停止（per-lane 覆寫全域下班時間）</label>`
+    +`<div class="row" style="margin-top:0"><input type="time" data-stop="${esc(l.name)}" value="${esc(l.stopAt||'')}" style="width:auto">`
+    +`<span class="muted" style="font-size:10px">到點只停dispatch，in-flight 做完</span>`
+    +(l.stopAt?`<span class="mb ready">⏱ ${esc(l.stopAt)}</span>`:``)+`</div>`;
+}
+function compStepper(l,key,label,lo,hi){
+  const cur=l.comp[key]??0;
+  return `<div class="f"><span>${label}</span><div class="stepper" data-comp="${esc(l.name)}" data-key="${key}" data-lo="${lo}" data-hi="${hi}">`
+    +`<button data-d="-1">−</button><span class="val">${cur}</span><button data-d="1">＋</button></div></div>`;
+}
+// ---- per-lane 角色模型（worker/reviewer/final：廠商 → 模型 → 思考強度）----
+const LANE_MODEL_ROLES=[
+  {key:"orchestrator", label:"Orchestrator",   chain:"orchestrator"},
+  {key:"worker",       label:"Worker",         chain:"worker"},
+  {key:"reviewer",     label:"Reviewer",       chain:"reviewer"},
+  {key:"final",        label:"Final Reviewer", chain:"finalgate"},
+];
+function ensureLaneModels(l){
+  if(!l.models)l.models={};
+  LANE_MODEL_ROLES.forEach(r=>{ if(!l.models[r.key]) l.models[r.key]={...CHAINS[r.chain][0]}; });
+  return l.models;
+}
+function pickerHTML(l,role){
+  const val=ensureLaneModels(l)[role];
+  return `<div class="lm-row" data-lmlane="${esc(l.name)}" data-lmrole="${role}">`
+    +`<select data-lm="v">${VENDORS.map(v=>`<option value="${v.id}" ${v.id===val.v?"selected":""}>${esc(v.label)}</option>`).join("")}</select>`
+    +`<select data-lm="m">${(MODELS[val.v]||[]).map(m=>`<option ${m===val.m?"selected":""}>${esc(m)}</option>`).join("")}</select>`
+    +`<select data-lm="e">${EFFORTS.map(e=>`<option ${e===val.e?"selected":""}>${e}</option>`).join("")}</select>`
+    +`</div>`;
+}
+function saveLaneModels(l){try{localStorage.setItem("orch_models_"+l.name,JSON.stringify(l.models));}catch(e){}}
+function tabImplement(l){
+  const ws=l.inflight.filter(p=>p.role==="worker");
+  return `<div class="tlabel">Implement（實作 · 成本重心，local 優先）</div>`
+    +(ws.length?ws.map(p=>agentOne(p,l)).join(""):`<div class="muted" style="font-size:11px">（目前無 in-flight worker）</div>`)
+    +`<div class="muted" style="font-size:10px;margin-top:8px">Local/Final Review FAIL → REWORK → 回到 Implement（rework 達上限 ${l.comp.rework} 會沿 chain 換一家重打）。</div>`
+    +phaseLogSection(l,"implement");
+}
+function tabLocalReview(l){
+  const g=l.gates||{};
+  return `<div class="tlabel">Local Review（① Task Review · ② Lane 自審）<span class="muted">正名見 gui_plan §4.0</span></div>`
+    +gateBox("rev-task","① Task Review（pi，逐 task）","半獨立 · code: reviews/&lt;ID&gt;.pi.md",g.task)
+    +gateBox("rev-self","② Lane 自審（orchestrator）","❌ 自審，非 gate · code: gate1/",g.self)
+    +phaseLogSection(l,"local_review")
+    +`<div class="muted" style="font-size:10px;margin-top:6px">FAIL → REWORK → Implement；PASS → Final Review（獨立最終關）。</div>`;
+}
+function tabFinalReview(l){
+  const g=l.gates||{}, fc=CHAINS.finalgate[0];
+  const gf=FAMILY(fc.m), wf=FAMILY(CHAINS.worker[0].m), of=FAMILY(CHAINS.orchestrator[0].m);
+  const indep=(gf!==wf&&gf!==of);
+  return `<div class="tlabel">Final Review（③ 獨立最終關）</div>`
+    +gateBox("rev-final","③ Final Reviewer（獨立最終關）","✅ 唯一真 gate · code: gate2/",g.final)
+    +`<div class="kv" style="margin-top:6px"><span>模型</span><span>${esc(fc.v)}/${esc(fc.m)}（effort ${esc(fc.e)}）</span></div>`
+    +`<div class="kv"><span>家族</span><span>${esc(gf)}</span></div>`
+    +`<div class="kv"><span>獨立性</span><span style="color:${indep?"var(--accent)":"var(--warn)"}">${indep?"✓ 與做事的家不同":"⚠ 與 orchestrator/worker 同家族"}</span></div>`
+    +`<div class="row"><button class="btn" data-act="verify">orch verify（Final Reviewer）</button>`
+    +`<button class="btn primary sm" data-act="gate-pass">PASS</button>`
+    +`<button class="btn danger sm" data-act="gate-fail">FAIL</button></div>`
+    +`<div class="muted" style="font-size:10px;margin-top:6px">FAIL → REWORK → Implement → Local Review → Final Review；PASS → Integrate。</div>`
+    +phaseLogSection(l,"final_review");
+}
+function tabIntegrate(l){
+  return `<div class="tlabel">Integrate（整合檢查）</div>`
+    +`<div class="muted" style="font-size:11px;margin-bottom:8px">Final Review PASS 後：main 乾淨（merge --dry-run）、整合測試 / autotest 全綠，才允許進 main。</div>`
+    +`<div class="row"><button class="btn" data-act="merge-dry">merge --dry-run（main 乾淨？）</button>`
+    +`<button class="btn" data-act="verify">整合測試 / autotest</button></div>`
+    +`<div class="muted" style="font-size:10px;margin-top:8px">FAIL → REWORK / FIX_INTEGRATION → 重跑 Integrate；PASS → Merge Main。</div>`
+    +phaseLogSection(l,"integrate");
+}
+function tabMergeMain(l){
+  const mb=MERGE[l.merge]||MERGE.open;
+  return `<div class="tlabel">Merge Main（進 main）</div>`
+    +`<div class="row" style="margin-top:0"><span class="mb ${mb.cls}">${mb.label}</span>`
+    +`<span class="muted" style="font-size:11px">${l.merge==="merged"?"此 lane 已進 main，無需再動":`領先 main +${l.ahead} commits，尚未進 main`}</span></div>`
+    +`<div class="row"><button class="btn primary" data-act="merge">merge --no-ff（進 main）→ push</button></div>`
+    +`<div class="muted" style="font-size:10px;margin-top:8px">強制順序：Final Review PASS → Integrate（main 乾淨 + 全測+autotest）→ merge --no-ff → push → Done</div>`
+    +phaseLogSection(l,"merge_main");
+}
+function tabDone(l){
+  const done=l.merge==="merged";
+  return `<div class="tlabel">Done（結案）</div>`
+    +`<div class="gate ${done?"pass":"wait"}"><div class="kv"><span>狀態</span><span>${done?"✓ 已進 main（"+esc(l.base)+"）":"lane 尚未結案"}</span></div></div>`
+    +`<div class="muted" style="font-size:10px;margin-top:8px">結案後 Pi 可回頭看各 phase log 產出「流程改善建議」（見「建議」頁）。</div>`
+    +phaseLogSection(l,"done");
+}
+function tabDispatch(l){
+  return `<div class="split">`
+    +`<div class="split-top">`
+      +`<div class="tlabel">dispatch（送出）<span class="muted">→ ${esc(l.name)}</span></div>`
+      +`<label>Task ID</label><input id="f-task" value="${esc(dispatchState.task)}" placeholder="BL-GESTURE-007">`
+      +`<label>模型（廠商 → 模型 → Effort；預設帶自角色 chain，可覆寫）</label>`
+      +`<div id="dispatch-picker"></div>`
+      +`<div class="fallback-note">此列為本次dispatch首選；用完額度會沿角色 fallback chain 往下退（見頂層「設定 → 模型設定」）。</div>`
+      +`<label style="margin-top:8px">Prompt（worker / reviewer；含 no_touch 禁改清單）</label>`
+      +`<textarea id="f-prompt" placeholder="worker 要做的事 + 禁改清單（no_touch）…" style="min-height:80px">${esc(dispatchState.prompt)}</textarea>`
+      +`<div class="row"><button class="btn" data-act="propose">🤖 AI dispatch（提案）</button>`
+      +`<button class="btn primary" data-act="worker">派 Worker</button>`
+      +`<button class="btn" data-act="reviewer">派 Reviewer</button></div>`
+    +`</div>`
+    +`<div class="split-bottom">`
+      +`<div class="tlabel">Pi 即時資訊（接收 pi 輸出）<span class="muted">auto · 隨輪詢更新</span></div>`
+      +piStreamHTML(l)
+    +`</div>`
+  +`</div>`;
+}
+function piStreamText(l){
+  if(!l.inflight.length) return "（此 lane 目前沒有 in-flight pi；dispatch後會在此即時顯示 pi 輸出）";
+  const lines=[];
+  l.inflight.forEach(p=>{
+    const roleLabel={worker:"worker",reviewer:"reviewer",finalgate:"final-gate"}[p.role]||p.role;
+    lines.push(`── [${roleLabel}] ${p.task} · ${p.model} · ${p.stall?"⚠ 停滯":"● 執行中"} ──`);
+    lines.push(`   ↳ ${p.act||"（無活動摘要）"}`);
+    lines.push(`   age ${p.age}m${p.role==="worker"?` · rework ${p.rework}/${l.comp.rework}`:""}`);
+    lines.push("");
+  });
+  return lines.join("\n").trimEnd();
+}
+function piStreamHTML(l){return `<pre class="pi-stream" id="pi-stream">${logHTML(piStreamText(l))}</pre>`;}
+// ---- 每 phase 一個 Pi log（持久化完整版；真實來源 logs/<lane>/<phase>.log）----
+function roleTag(r){return {worker:"worker",reviewer:"reviewer",finalgate:"final-gate"}[r]||r;}
+function phaseLogText(l,phase){
+  const pick=role=>l.inflight.filter(p=>p.role===role);
+  const agentLine=p=>`[${roleTag(p.role)}] ${p.task} · ${p.model}${p.fb?"（fallback）":""} · ${p.status}\n   ↳ ${p.act||"-"}`;
+  switch(phase){
+    case "dispatch":
+      return `lane ${l.name} 建立\n  branch=${l.branch}  base=${l.base}\n  workdir=${l.workdir||"-"}\n  items=${(l.items||[]).join(", ")}\n  files=${(l.files||[]).join(", ")}\n  comp=W${l.comp.workers}/R${l.comp.reviewers}/Final Reviewer${l.comp.final||"OFF"}/rework≤${l.comp.rework}\nOK: 可 dispatch`;
+    case "implement":{
+      const a=pick("worker");
+      return a.length?a.map(p=>agentLine(p)+`\n   age ${p.age}m · rework ${p.rework}/${l.comp.rework}`).join("\n\n"):"（此 phase 目前無 worker log）";
+    }
+    case "local_review":{
+      const a=pick("reviewer");
+      const head=a.length?a.map(p=>agentLine(p)+`\n   age ${p.age}m`).join("\n\n"):"（此 phase 目前無 reviewer log）";
+      return head+`\n\n[local-review] 機械檢查：diff 非空 ✓ · tests 綠 ✓ · 單行>120 ✓\n[local-review] 判斷 Review → ${l.gates.task||"-"}`;
+    }
+    case "final_review":
+      return `[final-review] 獨立重跑（model=${CHAINS.finalgate[0].v}/${CHAINS.finalgate[0].m} effort=${CHAINS.finalgate[0].e}）\n  verify.md checklist → ${l.gates.final||"-"}\n  獨立性：家族 ${FAMILY(CHAINS.finalgate[0].m)} ≠ 本 lane 做事的家\n`
+        +(l.merge==="merged"?"OK: gate PASS":"… 待 Final Review 結論");
+    case "integrate":
+      return l.merge==="merged"
+        ? `merge --dry-run：main 乾淨 ✓\n整合測試 + autotest：OK\n（FAIL → REWORK / FIX_INTEGRATION → 重跑 Integrate）`
+        : `merge --dry-run：…\n整合測試：…\n（尚未進 main，領先 main +${l.ahead}）`;
+    case "merge_main":
+      return l.merge==="merged"
+        ? `merge --no-ff ${l.branch} → main（base ${l.base}）\npush OK\nMERGED_TO_MAIN ${l.base}`
+        : `（尚未合併，領先 main +${l.ahead}）`;
+    case "done":
+      return l.merge==="merged"?`OK: lane ${l.name} 已進 main（${l.base}）\nDONE`:"（尚未完結）";
+  }
+  return "";
+}
+function phaseLogSection(l,phase){
+  const name=(PHASES.find(p=>p.id===phase)||{}).l||phase;
+  return `<label style="margin-top:10px">Pi Log · ${name}（此 phase 持久化）</label>`
+    +`<pre class="log" style="min-height:60px;max-height:170px">${logHTML(phaseLogText(l,phase))}</pre>`;
+}
+// ---- Log / 事件流（每 lane 一頁；真實來源 logs/&lt;lane&gt;/ 與 run.meta 依 lane 過濾）----
+function laneLogText(l){
+  const L=[];
+  L.push(`── lane ${l.name} · ${l.branch} · base ${l.base} ──`);
+  const inf=l.inflight||[];
+  if(!inf.length) L.push("（此 lane 目前無 in-flight pi log）");
+  inf.forEach(p=>{
+    L.push(`[${roleTag(p.role)}] ${p.task} · ${p.model}${p.fb?"（fallback）":""} · ${p.stall?"STALL":p.status}`);
+    L.push(`   ↳ ${p.act||"（無活動摘要）"}`);
+    L.push(`   age ${p.age}m${p.role==="worker"?` · rework ${p.rework}/${l.comp.rework}`:""}`);
+  });
+  const g=l.gates||{};
+  L.push(`[gate] task=${g.task||"-"} self=${g.self||"-"} final=${g.final||"-"}`);
+  L.push(l.merge==="merged"?`OK: MERGED_TO_MAIN ${l.base}`:`MERGE: ${l.merge}（尚未進 main）`);
+  return L.join("\n");
+}
+function laneMetaText(l){
+  const L=[];
+  L.push(`lane ${l.name} 建立 · branch=${l.branch} base=${l.base}`);
+  (l.inflight||[]).forEach(p=>{
+    L.push(`start role=${p.role} task=${p.task} model=${p.model}`);
+    if(p.fb) L.push(`PROVIDER_FALLBACK role=${p.role} task=${p.task} got=${p.model}（額度用盡）`);
+    if(p.role==="worker"&&p.rework>0) L.push(`rework ${p.task} #${p.rework}/${l.comp.rework}`);
+    if(p.stall) L.push(`STALL role=${p.role} task=${p.task}（age ${p.age}m 未更新）`);
+  });
+  if(l.paused) L.push(`PAUSED lane=${l.name}（使用者暫停派新 task）`);
+  if(l.merge==="merged") L.push(`MERGED_TO_MAIN lane=${l.name} ${l.base}`);
+  else if(l.merge==="ready") L.push(`READY_TO_MERGE lane=${l.name}（Gate PASS，待 merge）`);
+  return L.join("\n");
+}
+function tabLogs(l){
+  return `<div class="grid-logs" style="flex:1;min-height:0">`
+    +`<div class="col">`
+      +`<div class="tlabel">Log <span class="muted" style="text-transform:none;letter-spacing:0">logs/ · sessions/ tail · 本 lane</span></div>`
+      +`<pre class="log grow" style="margin:0;min-height:180px">${logHTML(laneLogText(l))}</pre>`
+    +`</div>`
+    +`<div class="col">`
+      +`<div class="tlabel">事件流 <span class="muted" style="text-transform:none;letter-spacing:0">run.meta tail（含 PROVIDER_FALLBACK）· 本 lane</span></div>`
+      +`<div class="meta-stream grow" style="margin:0;min-height:180px">${logHTML(laneMetaText(l))}</div>`
+    +`</div>`
+  +`</div>`;
+}
+// ---- Pi 自省 / 流程改善建議（預留頁；spec §3.7）----
+function retroItem(c,title,body){
+  return `<div class="retro-item"><div><span class="ldot ${c}" style="margin-right:6px"></span><b style="font-size:11px">${esc(title)}</b></div>`
+    +`<div class="muted" style="font-size:11px;margin-top:2px;padding-left:14px">${esc(body)}</div></div>`;
+}
+function tabIntrospect(l){
+  const done=l.merge==="merged";
+  return `<div class="tlabel">Pi 自省 · 流程改善建議 <span class="muted">（預留 · 未接）</span></div>`
+    +`<div class="muted" style="font-size:11px;margin-bottom:8px">整個 lane 做完後，Pi 自己回頭看各 phase 的 log（Worker/Review/Final Reviewer/Merge），提出「哪些要列入流程改善」。是 retrospective、非 gate；建議存 retro/&lt;lane&gt;.md，人決定採不採。</div>`
+    +`<div class="gate ${done?"pass":"wait"}"><div class="kv"><span>觸發條件</span><span>${done?"✓ lane 已完成（merged），可生成自省":"lane 尚未完成，暫不能自省"}</span></div></div>`
+    +`<label>建議（範例格式）</label>`
+    +retroItem("action","BL-GESTURE-007 rework 2 次","no_touch 漏 shells/gesture/collect.sh → 建議規劃階段強制 grep 既有實作（列入 Planner 流程）")
+    +retroItem("info","reviewer 停滯 11 分鐘","sessions jsonl 未更新 → 建議加 pi 心跳，或調整 ORCH_STALL_MIN")
+    +retroItem("info","fallback 1 次（premium 額度用盡）","worker 降級 local 仍完成 → 建議提高 copilot 額度，或 worker chain 前置較便宜 model")
+    +`<div class="row"><button class="btn" data-act="retro" ${done?"":"disabled"}>生成自省（預留）</button>`
+    +`<span class="muted" style="font-size:10px">輸出：retro/${esc(l.name)}.md（尚未實作）</span></div>`;
+}
+function agentOne(p,l){
+  const st=p.stall?AGENT_ST.stall:(AGENT_ST[p.status]||AGENT_ST.run);
+  const roleLabel={worker:"worker",reviewer:"reviewer",finalgate:"Final Reviewer"}[p.role]||p.role;
+  return `<div class="agent">`
+    +`<div class="a-top"><span class="tag ${p.role}">${roleLabel}</span><b style="font-size:11px">${esc(p.task)}</b>`
+    +`<span class="sbadge ${st.cls}">${st.label}</span></div>`
+    +`<div class="a-sub">`
+      +`<span class="mdl ${p.fb?"fb":""}">${p.fb?"↘ ":""}${esc(p.model)}${p.fb?"（fallback）":""}</span>`
+      +`<span>age ${p.age}m</span>`
+      +(p.role==="worker"?`<span class="rw">rework <b>${p.rework}</b>/${l.comp.rework}</span>`:``)
+    +`</div>`
+    +`<div class="a-act">↳ ${esc(p.act||"")}</div>`
+  +`</div>`;
+}
+function setGate(id,val){
+  const el=$("#"+id), t=$("#"+id+"-s");
+  const cls=val==="PASS"?"pass":(val==="FAIL"?"fail":(val==="OFF"?"fail":"wait"));
+  el.className="gate "+cls; t.textContent=val||"—";
+}
+
+function setBackend(on){STATE.live=on;$("#be-dot").className="dot "+(on?"on":"off");$("#be-state").textContent="backend: "+(on?"● 連線":"○ 靜態預覽");}
+async function poll(){
+  try{const r=await fetch(API+"/api/status");if(!r.ok)throw 0;STATE.data=await r.json();setBackend(true);}
+  catch(e){setBackend(false);}
+  render();
+  // dispatch頁的 Pi 即時資訊獨立刷新（即使正在 prompt 打字也持續接收）
+  if(curTab==="cmd"&&ldTab==="dispatch"){const ps=$("#pi-stream");
+    if(ps){const l=STATE.data.lanes.find(x=>x.name===STATE.selLane); if(l)ps.innerHTML=logHTML(piStreamText(l));}}
+}
+async function post(url,payload){
+  try{const r=await fetch(API+url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload||{})});
+      if(!r.ok)throw 0;await r.json();toast("→ "+url);}
+  catch(e){setBackend(false);toast("靜態預覽：未接後端，此動作不會真的執行（"+url+"）",true);}
+}
+let toastTimer;
+function toast(msg,warn){const t=$("#toast");t.textContent=msg;t.style.borderColor=warn?"var(--warn)":"var(--line)";
+  t.classList.add("show");clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove("show"),3200);}
+
+async function handleAct(a){
+  const lane=STATE.selLane;
+  if(a==="propose"){dispatchState.prompt="（提案）擴充 tools/gesture/collect.py 的 --no-preview；no_touch: shells/gesture/collect.sh, tools/agents/config.py";if($("#f-prompt"))$("#f-prompt").value=dispatchState.prompt;toast("已載入 AI 提案（人確認後再派）");return;}
+  if(a==="retro"){toast("Pi 自省為預留功能，尚未接後端（spec §3.7）");return;}
+  if(a==="local-test"){toast("測試連線（靜態預覽：真實會 GET {base_url}/models 驗 model 可載入）");return;}
+  if(a==="local-save"){toast("儲存 Local LLM 設定 → settings/secrets/local-vllm-api-key.json（靜態預覽：會寫 base_url / model / api_key）");return;}
+  if(a==="new"){
+    const proj=($("#n-project").value||"").trim();
+    const name=($("#n-name").value||"").trim();
+    const wd=$("#n-workdir").value.trim();
+    if(!name){toast("請先填 lane Name");return;}
+    if(wd){localStorage.setItem("orch_workdir_"+name,wd);toast(`已儲存工作目錄 ${name} → ${wd}（靜態預覽：存 localStorage；真實會寫進 .piforge/lanes/<lane>/lane.yaml）`);}
+    await post("/api/lanes",{act:"new",name,project:proj,workdir:wd,items:$("#n-items").value,files:$("#n-files").value,comp:NEWCOMP});
+    return;
+  }
+  const map={worker:`/api/lanes/${lane}/dispatch`,reviewer:`/api/lanes/${lane}/dispatch`,
+    verify:`/api/lanes/${lane}/verify`,"gate-pass":`/api/lanes/${lane}/gate`,"gate-fail":`/api/lanes/${lane}/gate`,
+    "merge-dry":`/api/lanes/${lane}/merge`,merge:`/api/lanes/${lane}/merge`};
+  await post(map[a]||"/api/noop",{act:a,pick:dispatchPick});
+}
+
+// 全域事件委派（中欄分頁 / 左欄清單 / pipeline 都是動態渲染）
+document.addEventListener("click",e=>{
+  const t=e.target;
+  const pt=t.closest("[data-proj-toggle]"); if(pt){const p=pt.dataset.projToggle;
+    if(collapsedProjects.has(p))collapsedProjects.delete(p);else collapsedProjects.add(p);renderLaneList(STATE.data);return;}
+  const li=t.closest("[data-lane]"); if(li){STATE.selLane=li.dataset.lane;ldTab="dispatch";render();return;}
+  const ph=t.closest("[data-phase]"); if(ph){ldTab=ph.dataset.phase;renderCenter();return;}
+  const tb=t.closest("[data-ldtab]"); if(tb){ldTab=tb.dataset.ldtab;renderCenter();return;}
+  const pu=t.closest("[data-pause]"); if(pu){const l=STATE.data.lanes.find(x=>x.name===pu.dataset.pause);
+    if(l){l.paused=!l.paused;toast(`lane ${l.name} → ${l.paused?"PAUSE（暫停派新 task）":"RESUME"}（靜態預覽）`);render();}return;}
+  const wd=t.closest("[data-wdir]"); if(wd){const l=STATE.data.lanes.find(x=>x.name===wd.dataset.wdir);
+    if(l){const nv=prompt("工作目錄（RobotProject 根；找 / 存檔案都限在這裡）",l.workdir||"");
+      if(nv!==null){l.workdir=nv.trim();if(l.workdir)localStorage.setItem("orch_workdir_"+l.name,l.workdir);else localStorage.removeItem("orch_workdir_"+l.name);
+        toast(`lane ${l.name} 工作目錄 → ${l.workdir||"（未設）"}（靜態預覽：已存 localStorage）`);render();}}return;}
+  const cs=t.closest(".stepper[data-comp] button");
+  if(cs){const st=cs.closest(".stepper[data-comp]");const l=STATE.data.lanes.find(x=>x.name===st.dataset.comp);
+    if(l){const key=st.dataset.key,lo=+st.dataset.lo,hi=+st.dataset.hi,d=+cs.dataset.d;
+      let cur=(l.comp[key]??0)+d;cur=Math.max(lo,Math.min(hi,cur));l.comp[key]=cur;
+      toast(`lane ${l.name} ${key} → ${cur}（只影響之後dispatch，靜態預覽）`);render();}return;}
+  if(t.closest("#empty-newlane")||t.closest("#empty-newlane-rm")){openNL();return;}
+  const cft=t.closest("[data-cfgtab]"); if(cft){cfgTab=cft.dataset.cfgtab;renderCfgTab();return;}
+  const sc=t.closest("[data-setup-check]"); if(sc){toast(`重新檢查 ${CLOUD[sc.dataset.setupCheck].label}（靜態預覽：真實會跑 pi auth check / vLLM ping）`);return;}
+  const cm=t.closest("[data-cmd]"); if(cm){const prov=CLOUD[cm.dataset.cmd]||{},c=(prov.setup&&prov.setup.cmd)||"";
+    if(navigator.clipboard)navigator.clipboard.writeText(c).then(()=>toast("已複製指令"),()=>toast("複製失敗："+c));else toast("此瀏覽器不支援剪貼簿："+c);return;}
+  const blh=t.closest(".bl .h"); if(blh){blh.closest(".bl").classList.toggle("open");return;}
+  const act=t.closest("[data-act]"); if(act){handleAct(act.dataset.act);return;}
+  const lt=t.closest("[data-local-toggle]"); if(lt){
+    const card=lt.closest(".setup-card"), det=card&&card.querySelector(".local-cfg-detail"), car=lt.querySelector(".caret");
+    if(det){const open=det.style.display!=="none"; det.style.display=open?"none":"block"; if(car)car.textContent=open?"▸":"▾";}
+    return;
+  }
+});
+document.addEventListener("change",e=>{
+  const t=e.target;
+  if(t.dataset.stop){const l=STATE.data.lanes.find(x=>x.name===t.dataset.stop);
+    if(l){l.stopAt=t.value;toast(t.value?`lane ${l.name} 排程 ${t.value} 停dispatch（in-flight 做完，靜態預覽）`:`lane ${l.name} 取消排程停止`);render();}}
+  const lm=t.closest?t.closest("[data-lm]"):null;
+  if(lm){const row=lm.closest(".lm-row");const l=STATE.data.lanes.find(x=>x.name===row.dataset.lmlane);
+    if(l){const role=row.dataset.lmrole;ensureLaneModels(l);
+      const vSel=row.querySelector('[data-lm="v"]'),mSel=row.querySelector('[data-lm="m"]'),eSel=row.querySelector('[data-lm="e"]');
+      if(lm.dataset.lm==="v"){l.models[role].v=vSel.value;l.models[role].m=(MODELS[vSel.value]||[])[0];
+        mSel.innerHTML=(MODELS[vSel.value]||[]).map(m=>`<option ${m===l.models[role].m?"selected":""}>${esc(m)}</option>`).join("");}
+      else if(lm.dataset.lm==="m"){l.models[role].m=mSel.value;}
+      else if(lm.dataset.lm==="e"){l.models[role].e=eSel.value;}
+      saveLaneModels(l);toast(`lane ${l.name} ${role} 模型 → ${l.models[role].v}/${l.models[role].m}（${l.models[role].e}）`);}
+    return;}
+});
+document.addEventListener("input",e=>{
+  if(e.target.id==="f-task")dispatchState.task=e.target.value;
+  if(e.target.id==="f-prompt")dispatchState.prompt=e.target.value;
+});
+
+// lane 組成 stepper（New Lane modal 內）
+$$(".stepper").forEach(s=>s.querySelectorAll("button").forEach(btn=>btn.onclick=()=>{
+  const key=s.dataset.step, d=+btn.dataset.d; let cur=NEWCOMP[key]+d;
+  if(key==="final")cur=Math.max(0,Math.min(1,cur));
+  else if(key==="rework")cur=Math.max(0,Math.min(20,cur));
+  else cur=Math.max(key==="workers"?1:0,Math.min(3,cur));
+  NEWCOMP[key]=cur; $("#c-"+key).textContent=cur;
+  $("#final-warn").classList.toggle("show",NEWCOMP.final===0);
+}));
+
+// New Lane modal
+function openNL(){$("#nl-modal").classList.add("show");showTab("cmd");}
+$("#btn-newlane").onclick=openNL;
+$("#nl-close").onclick=()=>$("#nl-modal").classList.remove("show");
+$("#nl-modal").onclick=e=>{if(e.target.id==="nl-modal")$("#nl-modal").classList.remove("show");};
+// 工作目錄：選資料夾（File System Access API；不支援就手動貼路徑）
+$("#n-workdir-pick").onclick=async()=>{
+  if(!window.showDirectoryPicker){toast("此瀏覽器不支援選資料夾，請直接貼上目錄路徑");return;}
+  try{
+    const h=await window.showDirectoryPicker();
+    $("#n-workdir-chip").innerHTML=`<span class="chip ready">已選 📁 ${esc(h.name)}</span>`;
+    if(!$("#n-workdir").value.trim())$("#n-workdir").value="（已選資料夾 "+h.name+"，請補上完整路徑）";
+    toast("已選工作目錄 "+h.name+"（記得在輸入欄補上完整路徑再儲存）");
+  }catch(e){/* 使用者取消 */}
+};
+
+// Backlog 分配（頁籤二）
+let blFilter="all";
+function renderBL(){
+  const groups=[["all","全部"],["running","進行中"],["reviewing","審查中"],["queued","排隊"],["assigned","已分配·未派"],["merged","已進 main"],["unassigned","未分配"]];
+  const cnt=id=>id==="all"?BACKLOG.length:BACKLOG.filter(b=>b.status===id).length;
+  $("#bl-filter").innerHTML=groups.map(([id,l])=>`<div class="tab ${id===blFilter?"sel":""}" data-f="${id}">${l} ${cnt(id)}</div>`).join("");
+  $$("#bl-filter .tab").forEach(t=>t.onclick=()=>{blFilter=t.dataset.f;renderBL();});
+  const list=BACKLOG.filter(b=>blFilter==="all"||b.status===blFilter);
+  $("#bl-list").innerHTML=list.map((b,i)=>{
+    const st=BL_ST[b.status]||BL_ST.unassigned;
+    const nt=b.no_touch&&b.no_touch.length?b.no_touch.map(x=>`<span class="nt">✗ ${esc(x)}</span>`).join("<br>"):'<span class="muted">（無）</span>';
+    return `<div class="bl" data-i="${i}">`+
+      `<div class="h"><span class="blst ${st.cls}">${st.label}</span><span class="id">${esc(b.id)}</span>`+
+        `<span class="ti">${esc(b.title)}</span>`+
+        `<span class="where">lane <b style="color:var(--fg)">${esc(b.lane)}</b> · ${esc(b.who)}</span></div>`+
+      `<div class="body">`+
+        `<div class="lbl">實際模型</div><div style="font-size:11px">${esc(b.model)}</div>`+
+        `<div class="lbl">dispatch內容（工作）</div><pre>${esc(b.prompt)}</pre>`+
+        `<div class="lbl">禁改清單（no_touch）</div><div style="font-size:11px">${nt}</div>`+
+      `</div></div>`;
+  }).join("")||`<div class="muted">此篩選無項目</div>`;
+  $$("#bl-list .bl").forEach(el=>el.querySelector(".h").onclick=()=>el.classList.toggle("open"));
+}
+
+// 模型設定（設定頁）
+let modalRole="orchestrator";
+function renderRoleTabs(){
+  $("#role-tabs").innerHTML=ROLES.map(r=>`<div class="tab ${r.id===modalRole?"sel":""}" data-r="${r.id}">${esc(r.label)}</div>`).join("");
+  $$("#role-tabs .tab").forEach(t=>t.onclick=()=>{modalRole=t.dataset.r;renderRoleTabs();renderChain();});
+  const r=ROLES.find(x=>x.id===modalRole); $("#chain-hint").textContent=r?r.note:"";
+}
+function renderChain(){
+  const box=$("#chain-editor"); box.innerHTML=""; const chain=CHAINS[modalRole];
+  chain.forEach((row,i)=>{
+    const holder=pickerRow(row,()=>checkIndep(),()=>{chain.splice(i,1);renderChain();});
+    const idx=document.createElement("div"); idx.style.cssText="font-size:10px;color:var(--dim);margin:2px 0 -4px";
+    idx.textContent=(i===0?"首選":"fallback #"+i); box.append(idx,holder);
+  });
+  checkIndep();
+}
+function checkIndep(){
+  const w=$("#indep-warn");
+  if(modalRole!=="finalgate"){w.textContent="";return;}
+  const gf=FAMILY(CHAINS.finalgate[0].m), wf=FAMILY(CHAINS.worker[0].m), of=FAMILY(CHAINS.orchestrator[0].m);
+  if(gf===wf||gf===of) w.textContent=`⚠ 獨立性風險：Final Reviewer 首選家族「${gf}」與 orchestrator/worker 相同。應換一家（runtime 亦會依 commit Model: trailer 排除已做事的家）。`;
+  else w.textContent=`✓ 獨立性 OK：Final Reviewer 家族「${gf}」與做事的家不同。`;
+}
+$("#chain-add").onclick=()=>{CHAINS[modalRole].push({v:"copilot",m:MODELS.copilot[0],e:"high"});renderChain();};
+$("#chain-save").onclick=()=>{toast("靜態預覽：會寫入 orch_models.json（未接後端）");renderDispatchPicker();};
+
+// Monitor 間隔（設定頁）
+function startPoll(){ if(pollTimer)clearInterval(pollTimer); pollTimer=setInterval(poll,POLL_MS); }
+$("#poll-int").onchange=e=>{ POLL_MS=+e.target.value; startPoll(); toast(`Monitor 間隔 → ${POLL_MS/1000}s`); };
+
+// 全域「下班時間」（設定頁）
+$("#quit-time").onchange=e=>{
+  const t=e.target.value;
+  $("#quit-hint").textContent=t?`${t} 後全 lane 停dispatch`:"";
+  toast(t?`已設下班停派 ${t}：到點所有 lane 只停dispatch，in-flight 做完（靜態預覽）`:"已取消全域下班停派");
+};
+
+// 預覽橫幅可關閉
+$("#banner-x").onclick=()=>$("#preview-banner").style.display="none";
+
+// 啟動
+// 載入已儲存的工作目錄與角色模型（真實環境＝lane.conf；此處靜態預覽用 localStorage 保留）
+(STATE.data.lanes||[]).forEach(l=>{
+  const s=localStorage.getItem("orch_workdir_"+l.name); if(s)l.workdir=s;
+  const m=localStorage.getItem("orch_models_"+l.name); if(m){try{l.models=JSON.parse(m);}catch(e){}}
+});
+renderCloud(); renderSetup(); renderLocalCfg(); renderRoles(); renderDispatchPicker(); renderRoleTabs(); renderChain(); renderCfgTab(); render();
+poll(); startPoll();
+</script>
+</body>
+</html>
